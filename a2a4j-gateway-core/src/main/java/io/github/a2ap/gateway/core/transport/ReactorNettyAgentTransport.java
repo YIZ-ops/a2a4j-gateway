@@ -34,6 +34,7 @@ import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
 import io.netty.channel.ChannelOption;
+import io.netty.handler.codec.http.HttpMethod;
 import io.netty.handler.timeout.ReadTimeoutException;
 
 /** Reactor Netty transport with SSRF checks, bounded response bodies and phase timeouts. */
@@ -142,56 +143,61 @@ public final class ReactorNettyAgentTransport implements AgentTransport, AutoClo
 
     private Flux<OutboundResponse> send(URI uri, OutboundRequest request, OutboundCredentials credentials) {
         HttpClient client = client(request, credentials);
-        return client.post()
-                .uri(uri.toString())
-                .send((requestSender, outbound) -> outbound.sendString(Mono.just(request.body()), StandardCharsets.UTF_8))
-                .responseSingle((response, content) -> content.asByteArray().flatMap(bytes -> {
-                    if (bytes.length > maxResponseBytes) {
-                        return Mono.error(new AgentTransportException(AgentTransportException.Code.RESPONSE_TOO_LARGE,
-                                "upstream response exceeds configured size"));
-                    }
-                    if (response.status().code() < 200 || response.status().code() >= 300) {
-                        return Mono.error(new AgentTransportException(AgentTransportException.Code.UPSTREAM_HTTP,
-                                "upstream returned HTTP " + response.status().code()));
-                    }
-                    Map<String, String> headers = new LinkedHashMap<>();
-                    response.responseHeaders().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));
-                    return Mono.just(new OutboundResponse(request.protocol(), response.status().code(),
-                            new String(bytes, StandardCharsets.UTF_8), headers, true));
-                }))
+        HttpClient.RequestSender sender = client.request(HttpMethod.valueOf(request.httpMethod()))
+                .uri(uri.toString());
+        HttpClient.ResponseReceiver<?> receiver = request.body().isEmpty() ? sender
+                : sender.send((requestSender, outbound) -> outbound.sendString(Mono.just(request.body()),
+                        StandardCharsets.UTF_8));
+        return receiver.responseSingle((response, content) -> content.asByteArray().flatMap(bytes -> {
+            if (bytes.length > maxResponseBytes) {
+                return Mono.error(new AgentTransportException(AgentTransportException.Code.RESPONSE_TOO_LARGE,
+                        "upstream response exceeds configured size"));
+            }
+            if (response.status().code() < 200 || response.status().code() >= 300) {
+                return Mono.error(new AgentTransportException(AgentTransportException.Code.UPSTREAM_HTTP,
+                        "upstream returned HTTP " + response.status().code()));
+            }
+            Map<String, String> headers = new LinkedHashMap<>();
+            response.responseHeaders().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));
+            return Mono.just(new OutboundResponse(request.protocol(), response.status().code(),
+                    new String(bytes, StandardCharsets.UTF_8), headers, true));
+        }))
                 .flux();
     }
 
     private Flux<OutboundResponse> streamSend(URI uri, OutboundRequest request,
             OutboundCredentials credentials, SseEventCodec codec) {
         HttpClient client = client(request, credentials);
-        return client.post().uri(uri.toString())
-                .send((requestSender, outbound) -> outbound.sendString(Mono.just(request.body()), StandardCharsets.UTF_8))
-                .response((response, content) -> {
-                    int statusCode = response.status().code();
-                    if (statusCode < 200 || statusCode >= 300) {
-                        return content.asString(StandardCharsets.UTF_8).collectList()
-                                .flatMapMany(parts -> Flux.<OutboundResponse>error(new AgentTransportException(
-                                        AgentTransportException.Code.UPSTREAM_HTTP,
-                                        "upstream returned HTTP " + statusCode)));
-                    }
-                    Map<String, String> headers = new LinkedHashMap<>();
-                    response.responseHeaders().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));
-                    String contentType = response.responseHeaders().get("Content-Type");
-                    if (contentType == null || !contentType.toLowerCase().startsWith("text/event-stream")) {
-                        return content.asString(StandardCharsets.UTF_8).collectList()
-                                .map(parts -> new OutboundResponse(request.protocol(), statusCode,
-                                        String.join("", parts), headers, true)).flux();
-                    }
-                    SseEventCodec.Parser parser = codec.parser();
-                    return content.asString(StandardCharsets.UTF_8)
-                            .concatWith(Mono.just("\n"))
-                            .flatMapIterable(chunk -> parser.feed(chunk).stream()
-                                    .map(event -> codec.toResponse(event, request.protocol(), statusCode, headers, false))
-                                    .toList())
-                            .concatWith(Flux.defer(() -> Flux.fromIterable(parser.complete())
-                                    .map(event -> codec.toResponse(event, request.protocol(), statusCode, headers, true))));
-                });
+        HttpClient.RequestSender sender = client.request(HttpMethod.valueOf(request.httpMethod()))
+                .uri(uri.toString());
+        HttpClient.ResponseReceiver<?> receiver = request.body().isEmpty() ? sender
+                : sender.send((requestSender, outbound) -> outbound.sendString(Mono.just(request.body()),
+                        StandardCharsets.UTF_8));
+        return receiver.response((response, content) -> {
+            int statusCode = response.status().code();
+            if (statusCode < 200 || statusCode >= 300) {
+                return content.asString(StandardCharsets.UTF_8).collectList()
+                        .flatMapMany(parts -> Flux.<OutboundResponse>error(new AgentTransportException(
+                                AgentTransportException.Code.UPSTREAM_HTTP,
+                                "upstream returned HTTP " + statusCode)));
+            }
+            Map<String, String> headers = new LinkedHashMap<>();
+            response.responseHeaders().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));
+            String contentType = response.responseHeaders().get("Content-Type");
+            if (contentType == null || !contentType.toLowerCase().startsWith("text/event-stream")) {
+                return content.asString(StandardCharsets.UTF_8).collectList()
+                        .map(parts -> new OutboundResponse(request.protocol(), statusCode,
+                                String.join("", parts), headers, true)).flux();
+            }
+            SseEventCodec.Parser parser = codec.parser();
+            return content.asString(StandardCharsets.UTF_8)
+                    .concatWith(Mono.just("\n"))
+                    .flatMapIterable(chunk -> parser.feed(chunk).stream()
+                            .map(event -> codec.toResponse(event, request.protocol(), statusCode, headers, false))
+                            .toList())
+                    .concatWith(Flux.defer(() -> Flux.fromIterable(parser.complete())
+                            .map(event -> codec.toResponse(event, request.protocol(), statusCode, headers, true))));
+        });
     }
 
     private HttpClient client(OutboundRequest request, OutboundCredentials credentials) {

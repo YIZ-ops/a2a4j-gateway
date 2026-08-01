@@ -46,7 +46,7 @@ public final class GatewayJsonRpcErrorHandler {
         Map<String, Object> detail = new LinkedHashMap<>();
         detail.put("code", mapping.rpcCode());
         detail.put("message", safeMessage(cause));
-        detail.put("data", Map.of("gatewayCode", mapping.gatewayCode()));
+        detail.put("data", java.util.List.of(A2aErrorPayload.errorInfo(mapping.asPayloadMapping())));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("jsonrpc", "2.0");
         body.put("id", null);
@@ -109,7 +109,7 @@ public final class GatewayJsonRpcErrorHandler {
             case "INVALID_ARGUMENT", "GATEWAY_INVALID_REQUEST" -> -32602;
             default -> -32603;
         };
-        return new Mapping(status, rpcCode, gatewayCode);
+        return new Mapping(status, rpcCode, gatewayCode, A2aErrorPayload.reasonFor(gatewayCode));
     }
 
     private Throwable unwrap(Throwable error) {
@@ -126,7 +126,12 @@ public final class GatewayJsonRpcErrorHandler {
         return message == null || message.isBlank() ? "gateway request failed" : message;
     }
 
-    private record Mapping(int status, int rpcCode, String gatewayCode) {
+    private record Mapping(int status, int rpcCode, String gatewayCode, String reason) {
+
+        private A2aErrorPayload.Mapping asPayloadMapping() {
+            return new A2aErrorPayload.Mapping(status, gatewayCode, reason);
+        }
+
     }
 
 }

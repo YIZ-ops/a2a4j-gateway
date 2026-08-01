@@ -41,7 +41,6 @@ class MessageTest {
         assertNull(message.getRole());
         assertNull(message.getParts());
         assertNull(message.getMetadata());
-        assertEquals("message", message.getKind());
     }
 
     @Test
@@ -53,9 +52,7 @@ class MessageTest {
         List<Part> parts = Arrays.asList(new TextPart("Hello"));
         Map<String, Object> metadata = new HashMap<>();
         metadata.put("key", "value");
-        String kind = "custom-message";
-
-        Message message = new Message(messageId, taskId, contextId, role, parts, metadata, kind);
+        Message message = new Message(messageId, taskId, contextId, role, parts, metadata);
         
         assertEquals(messageId, message.getMessageId());
         assertEquals(taskId, message.getTaskId());
@@ -63,7 +60,6 @@ class MessageTest {
         assertEquals(role, message.getRole());
         assertEquals(parts, message.getParts());
         assertEquals(metadata, message.getMetadata());
-        assertEquals(kind, message.getKind());
     }
 
     @Test
@@ -82,15 +78,12 @@ class MessageTest {
         metadata.put("priority", "high");
         message.setMetadata(metadata);
         
-        message.setKind("custom-message");
-        
         assertEquals("msg-123", message.getMessageId());
         assertEquals("task-456", message.getTaskId());
         assertEquals("context-789", message.getContextId());
         assertEquals("agent", message.getRole());
         assertEquals(parts, message.getParts());
         assertEquals(metadata, message.getMetadata());
-        assertEquals("custom-message", message.getKind());
     }
 
     @Test
@@ -106,7 +99,6 @@ class MessageTest {
                 .role("user")
                 .parts(parts)
                 .metadata(metadata)
-                .kind("builder-message")
                 .build();
 
         assertEquals("builder-msg-123", message.getMessageId());
@@ -115,7 +107,6 @@ class MessageTest {
         assertEquals("user", message.getRole());
         assertEquals(parts, message.getParts());
         assertEquals(metadata, message.getMetadata());
-        assertEquals("builder-message", message.getKind());
     }
 
     @Test
@@ -131,7 +122,6 @@ class MessageTest {
         assertNull(message.getContextId());
         assertNull(message.getParts());
         assertNull(message.getMetadata());
-        assertEquals("message", message.getKind());
     }
 
     @Test
@@ -201,7 +191,6 @@ class MessageTest {
         
         assertTrue(toString.contains("Message"));
         assertTrue(toString.contains("messageId=null"));
-        assertTrue(toString.contains("kind=message"));
     }
 
     @Test
@@ -282,22 +271,6 @@ class MessageTest {
         assertEquals(metadata, message.getMetadata());
         assertEquals("high", message.getMetadata().get("priority"));
         assertEquals("test", message.getMetadata().get("category"));
-    }
-
-    @Test
-    void testMessageKindDefaultValue() {
-        Message message = new Message();
-        assertEquals("message", message.getKind());
-        
-        Message builtMessage = Message.builder().messageId("test").build();
-        assertEquals("message", builtMessage.getKind());
-    }
-
-    @Test
-    void testMessageKindCustomValue() {
-        Message message = new Message();
-        message.setKind("custom-message-type");
-        assertEquals("custom-message-type", message.getKind());
     }
 
     @Test

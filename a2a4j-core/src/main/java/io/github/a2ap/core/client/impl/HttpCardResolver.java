@@ -34,7 +34,7 @@ import reactor.netty.http.client.HttpClient;
  * 
  * Discovery process:
  * 1. Treats the agent identifier as a base URL
- * 2. Appends the well-known path "/.well-known/agent.json"
+ * 2. Appends the A2A 1.0 well-known path "/.well-known/agent-card.json"
  * 3. Performs an HTTP GET request to retrieve the agent card
  * 4. Deserializes the JSON response into an AgentCard object
  * 
@@ -63,11 +63,6 @@ public class HttpCardResolver implements CardResolver {
         log.info("Retrieve agent card to {}", this.baseUrl);
         try {
             AgentCard responseCard = fetch(A2AProtocolV1.AGENT_CARD_PATH);
-            if (responseCard == null) {
-                // A bounded compatibility fallback keeps older agents discoverable while
-                // the primary wire contract remains the A2A 1.0 agent-card.json path.
-                responseCard = fetch("/.well-known/agent.json");
-            }
             log.info("Retrieve agent card {} successfully. Info: {}", this.baseUrl, responseCard);
             return responseCard;
         } catch (Exception e) {

@@ -626,7 +626,14 @@ class GatewayHttpJsonDataPlaneE2eTest {
                 .accept(MediaType.APPLICATION_JSON).bodyValue(rpcRequest).exchange().expectStatus().isEqualTo(502)
                 .expectBody(String.class).returnResult().getResponseBody();
         assertTrue(httpError.contains("GATEWAY_UPSTREAM_PROTOCOL_ERROR"));
+        assertTrue(httpError.contains("\"code\":502"), httpError);
+        assertTrue(httpError.contains("\"status\":\"BAD_GATEWAY\""), httpError);
+        assertTrue(httpError.contains("google.rpc.ErrorInfo"), httpError);
+        assertTrue(httpError.contains("\"reason\":\"INVALID_AGENT_RESPONSE\""), httpError);
         assertTrue(rpcError.contains("\"gatewayCode\":\"GATEWAY_UPSTREAM_PROTOCOL_ERROR\""));
+        assertTrue(rpcError.contains("\"data\":["), rpcError);
+        assertTrue(rpcError.contains("google.rpc.ErrorInfo"), rpcError);
+        assertTrue(rpcError.contains("\"reason\":\"INVALID_AGENT_RESPONSE\""), rpcError);
 
         String invalidVersion = jsonRpc.post().uri("/gateway/v1/a2a").header("A2A-Version", "0.2.1")
                 .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
@@ -714,7 +721,7 @@ class GatewayHttpJsonDataPlaneE2eTest {
         String accept = request.requestHeaders().get("Accept");
         String contentType = request.requestHeaders().get("Content-Type");
         boolean httpJson = contentType != null && contentType.contains("application/a2a+json");
-        return request.receive().aggregate().asString().flatMap(body -> {
+        return request.receive().aggregate().asString().defaultIfEmpty("").flatMap(body -> {
             if (body.contains("bad-response")) {
                 return response.status(200).header("Content-Type", "application/json")
                         .sendString(Mono.just("{\"invalid\":")).then();
@@ -757,7 +764,7 @@ class GatewayHttpJsonDataPlaneE2eTest {
 
     private Publisher<Void> handleSecondUpstream(reactor.netty.http.server.HttpServerRequest request,
             reactor.netty.http.server.HttpServerResponse response) {
-        return request.receive().aggregate().asString().flatMap(body -> response.status(200)
+        return request.receive().aggregate().asString().defaultIfEmpty("").flatMap(body -> response.status(200)
                 .header("Content-Type", "application/json")
                 .sendString(Mono.just(syncResponse(body).replace("\"up-1\"", "\"up-b-1\"")
                         .replace("\"up-c\"", "\"up-b-c\"").replace("\"task\":{", "\"served-by-b\":true,\"task\":{")))

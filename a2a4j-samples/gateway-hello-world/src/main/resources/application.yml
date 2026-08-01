@@ -26,13 +26,13 @@ a2a:
         display-name: Echo Agent A
         instances:
           - instance-id: echo-a-1
-            card-url: http://localhost:8091/.well-known/agent.json
+            card-url: http://localhost:8091/.well-known/agent-card.json
       - tenant-id: demo
         agent-id: echo-b
         display-name: Echo Agent B
         instances:
           - instance-id: echo-b-1
-            card-url: http://localhost:8092/.well-known/agent.json
+            card-url: http://localhost:8092/.well-known/agent-card.json
     security:
       enabled: true
       mode: api-key

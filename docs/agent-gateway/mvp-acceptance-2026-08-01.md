@@ -19,9 +19,9 @@ HTTP+JSON-only 上游和 JSON-RPC 上游均有真实 Reactor Netty 验证，另�
 
 | 检查 | 结果 |
 | --- | --- |
-| `mvnw.cmd clean test -DskipTests=false -Dmaven.clean.failOnError=false` | 通过：13 个 Reactor 模块，247 tests，0 failures，0 errors，0 skipped；Windows 用户进程锁定普通样例 JAR 时 clean 删除失败被显式降级，门禁使用独立 `*-exec.jar` |
+| `mvnw.cmd clean test -DskipTests=false -Dmaven.clean.failOnError=false` | 通过：13 个 Reactor 模块，250 tests，0 failures，0 errors，0 skipped；Windows 用户进程锁定普通样例 JAR 时 clean 删除失败被显式降级，门禁使用独立 `*-exec.jar` |
 | Sample package + `tools/g9-smoke.ps1` | 通过：隔离端口 18191/18192/18199；两个独立 `server-hello-world` Agent（`echo-a`/`echo-b` profile）发布真实 Card 并执行 `DemoAgentExecutor`，Gateway UP、dependency healthy=2、未认证 `401`、错误版本 `400`、目录列表/详情/Card `200`、目录 JSON 非空、目标 `echo-b`、Skill-only 路由、HTTP 200、转发响应体非空、`SEND_MESSAGE outcome=SUCCESS` |
-| `GatewayHttpJsonDataPlaneE2eTest` | 通过：14 个 WebFlux + Reactor Netty E2E，覆盖 HTTP+JSON/JSON-RPC 入站、JSON-RPC/HTTP+JSON 上游发送、双健康实例分布、200 并发 SSE、SSE 事件/终态/ID 重写、客户端取消传播、非法/不可用上游响应映射、双入口错误/版本/授权等价、List/Get/Cancel/Subscribe 任务操作、403/跨租户隔离、未认证和版本拒绝，以及真实 RSA JWT Resource Server 过滤链和无效签名 `401` |
+| `GatewayHttpJsonDataPlaneE2eTest` | 通过：15 个 WebFlux + Reactor Netty E2E，覆盖 HTTP+JSON/JSON-RPC 入站、JSON-RPC/HTTP+JSON 上游发送、双健康实例分布、200 并发 SSE、SSE 事件/终态/ID 重写、客户端取消传播、非法/不可用上游响应映射、双入口错误/版本/授权等价、List/Get/Cancel/Subscribe 任务操作、403/跨租户隔离、未认证和版本拒绝，以及真实 RSA JWT Resource Server 过滤链和无效签名 `401` |
 | `DefaultAgentInterfaceSelectorTest` | 通过：JSON-RPC 优先、HTTP+JSON-only fallback、非法版本/Binding 拒绝 |
 | `GatewayStreamingForwarderTest` / `JsonRpcProtocolAdapterTest` | 通过：流式下游取消传播、`taskId`/`contextId` 不泄露上游 ID |
 | `git diff --check` | 通过，无空白错误 |
@@ -49,7 +49,7 @@ HTTP+JSON-only 上游和 JSON-RPC 上游均有真实 Reactor Netty 验证，另�
 | AC-13/14 | 通过（单元） | 幂等键冲突、完成、结果未知和 TTL 单测通过。 |
 | AC-15 | 通过（单元 + WebFlux E2E） | 跨租户任务查询返回不泄露任务 ID 的 `404`，同租户不同主体返回 `403`；策略和任务路由单测同步覆盖。 |
 | AC-16/17 | 通过（单元 + WebFlux E2E） | SSRF/CIDR、非法 Card 有单测；真实上游非法 JSON 和 HTTP 503 E2E 映射为稳定 Gateway 错误。 |
-| AC-18 | 通过（单元 + WebFlux E2E + 真实进程 smoke） | HTTP+JSON→JSON-RPC 和 HTTP+JSON→HTTP+JSON 的同步/SSE 转换、任务操作、响应体、Content-Type 和 ID 重写均有真实上游 E2E；真实 Server Starter smoke 额外验证 HTTP+JSON Part 自动补充 JSON-RPC 所需的 `kind: text` 判别字段。 |
+| AC-18 | 通过（单元 + WebFlux E2E + 真实进程 smoke） | HTTP+JSON→JSON-RPC 和 HTTP+JSON→HTTP+JSON 的同步/SSE 转换、任务操作、响应体、Content-Type 和 ID 重写均有真实上游 E2E；真实 Server Starter smoke 验证 A2A 1.0 文本 Part 在入站/出站链路中保持 `text`/`mediaType` 结构且不生成 `kind`。 |
 | AC-19 | 通过 | body-free audit、Header 脱敏和 Token 不落日志有单测；`tools/g10-release-gates.ps1` 对 runtime/source-like 文件执行 bearer/API-key/private-key/client-secret 扫描，并执行 Gateway blocking-call policy scan；外部 CI 可继续接入 SAST/DAST。 |
 | AC-20 | 通过（文档） | 单实例重启限制已记录。 |
 | AC-21 | 通过（样例脚本/单元 + WebFlux E2E） | `tools/g9-smoke.ps1` 和 JSON-RPC/HTTP+JSON 入站 E2E 均验证错误 `A2A-Version` 返回 `400`，不静默降级。 |
@@ -67,7 +67,7 @@ HTTP+JSON-only 上游和 JSON-RPC 上游均有真实 Reactor Netty 验证，另�
 | 写请求无不安全跨实例自动重试 | 通过（单元）：结果未知进入 UNKNOWN，不自动切换实例重发。 |
 | secret 不进入样例/日志/指标/追踪/错误体 | **通过（MVP）**：脱敏/body-free audit 单测及 `g10-release-gates` runtime/source-like secret scan 均通过。 |
 | README 明确协议、单实例限制和不兼容项 | 通过：README、配置和发布说明已记录。 |
-| 迁移项目测试和 A2A 1.0 Binding 契约全部通过 | **通过**：247 tests 全通过；Client/Server Starter/Samples 已切换 A2A 1.0 method/path，legacy method 仅保留拒绝 contract。 |
+| 迁移项目测试和 A2A 1.0 Binding 契约全部通过 | **通过**：全量测试通过；Client/Server Starter/Samples 已切换 A2A 1.0 method/path，非 1.0 method 只做拒绝校验，不进入运行时兼容路径。 |
 | 性能报告 | **通过（基线）**：固定 Windows 硬件/JVM、69-byte payload、80 sequential/40 concurrent/concurrency=8，并记录网关与直连上游 p95/p99。 |
 
 ## 发布后增强项（不阻塞 MVP）

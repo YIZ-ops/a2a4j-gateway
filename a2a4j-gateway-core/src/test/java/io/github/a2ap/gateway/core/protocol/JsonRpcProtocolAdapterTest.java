@@ -17,14 +17,17 @@
 package io.github.a2ap.gateway.core.protocol;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.a2ap.gateway.api.GatewayHeaders;
 import io.github.a2ap.gateway.api.model.AgentInstance;
 import io.github.a2ap.gateway.api.model.AgentInterface;
 import io.github.a2ap.gateway.api.model.GatewayCommand;
+import io.github.a2ap.gateway.api.model.GatewayEvent;
 import io.github.a2ap.gateway.api.model.InboundExchange;
 import io.github.a2ap.gateway.api.model.OutboundRequest;
+import io.github.a2ap.gateway.api.model.OutboundResponse;
 import io.github.a2ap.gateway.api.model.PrincipalContext;
 import io.github.a2ap.gateway.api.model.ProtocolDescriptor;
 import java.time.Instant;
@@ -59,7 +62,34 @@ class JsonRpcProtocolAdapterTest {
                 .readTree(outbound.body());
         assertEquals("SendMessage", encoded.get("method").asText());
         assertEquals("m-1", encoded.at("/params/message/messageId").asText());
-        assertEquals("text", encoded.at("/params/message/parts/0/kind").asText());
+        assertFalse(encoded.at("/params/message/parts/0").has("kind"));
+    }
+
+    @Test
+    void decodesV1StreamingWrappers() throws Exception {
+        String v1Status = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{"
+                + "\"statusUpdate\":{\"taskId\":\"up-1\",\"contextId\":\"up-c\","
+                + "\"status\":{\"state\":\"TASK_STATE_WORKING\"}}}}";
+        GatewayEvent status = adapter.decodeResponse(new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 200,
+                v1Status, Map.of(), false)).blockFirst();
+        assertEquals(GatewayEvent.Type.TASK_STATUS, status.type());
+        assertEquals("up-1", status.metadata().get("upstreamTaskId"));
+        assertEquals("up-c", adapter.extractTaskReference(v1Status).contextId());
+
+        String v1Artifact = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{"
+                + "\"artifactUpdate\":{\"taskId\":\"up-1\",\"contextId\":\"up-c\","
+                + "\"artifact\":{\"artifactId\":\"a-1\",\"parts\":[{\"text\":\"chunk\"}]},"
+                + "\"append\":false,\"lastChunk\":true}}}";
+        GatewayEvent artifact = adapter.decodeResponse(new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 200,
+                v1Artifact, Map.of(), false)).blockFirst();
+        assertEquals(GatewayEvent.Type.TASK_ARTIFACT, artifact.type());
+
+        String finalStatus = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{"
+                + "\"statusUpdate\":{\"taskId\":\"up-1\",\"contextId\":\"up-c\","
+                + "\"status\":{\"state\":\"TASK_STATE_COMPLETED\"}}}}";
+        GatewayEvent completed = adapter.decodeResponse(new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 200,
+                finalStatus, Map.of(), false)).blockFirst();
+        assertEquals(GatewayEvent.Type.TASK_COMPLETED, completed.type());
     }
 
     @Test
@@ -80,17 +110,6 @@ class JsonRpcProtocolAdapterTest {
                 .at("/result/statusUpdate/taskId").asText());
         assertEquals("gw-c", new com.fasterxml.jackson.databind.ObjectMapper().readTree(rewrittenUpdate)
                 .at("/result/statusUpdate/contextId").asText());
-
-        String directUpdate = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"kind\":\"status-update\","
-                + "\"taskId\":\"up-1\",\"contextId\":\"up-c\",\"final\":false}}";
-        JsonRpcTaskReference directReference = adapter.extractTaskReference(directUpdate);
-        assertEquals("up-1", directReference.taskId());
-        assertEquals("up-c", directReference.contextId());
-        String rewrittenDirectUpdate = adapter.rewriteTaskIdentifiers(directUpdate, "up-1", "up-c", "gw-1", "gw-c");
-        assertEquals("gw-1", new com.fasterxml.jackson.databind.ObjectMapper().readTree(rewrittenDirectUpdate)
-                .at("/result/taskId").asText());
-        assertEquals("gw-c", new com.fasterxml.jackson.databind.ObjectMapper().readTree(rewrittenDirectUpdate)
-                .at("/result/contextId").asText());
     }
 
     @Test

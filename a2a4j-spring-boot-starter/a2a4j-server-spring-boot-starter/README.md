@@ -138,7 +138,7 @@ public class MyAgentApplication {
 
 Your A2A server will be available at the configured URL with the following endpoints:
 
-- `GET /.well-known/agent.json` - Agent Card discovery
+- `GET /.well-known/agent-card.json` - Agent Card discovery
 - `POST /a2a/server` - JSON-RPC endpoint for synchronous and streaming requests
 
 ## Configuration Properties
@@ -362,7 +362,7 @@ class A2AServerIntegrationTest {
     @Test
     void testAgentCard() {
         ResponseEntity<AgentCard> response = restTemplate.getForEntity(
-            "/.well-known/agent.json", AgentCard.class);
+            "/.well-known/agent-card.json", AgentCard.class);
         
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();

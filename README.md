@@ -87,9 +87,8 @@ For other frameworks, it is recommended to use `a2a4j-core`.
 ```
 
 The current runtime uses A2A 1.0 method names (`SendMessage`, `SendStreamingMessage`, `GetTask`, `ListTasks`,
-`CancelTask`, and `SubscribeToTask`). The primary Agent Card path is `/.well-known/agent-card.json`; the sample
-also keeps `/.well-known/agent.json` as a compatibility alias. Legacy 0.2.1 method names such as `message/send`
-and `message/stream` are rejected by the 1.0 dispatcher.
+`CancelTask`, and `SubscribeToTask`). The Agent Card path is `/.well-known/agent-card.json`; legacy Agent Card
+paths and 0.2.1 method names are not supported.
 
 #### Expose an External Endpoint
 
@@ -102,7 +101,7 @@ public class MyA2AController {
     @Autowired
     private final Dispatcher a2aDispatch;
 
-    @GetMapping({ "/.well-known/agent-card.json", "/.well-known/agent.json" })
+    @GetMapping("/.well-known/agent-card.json")
     public ResponseEntity<AgentCard> getAgentCard() {
         AgentCard card = a2aServer.getSelfAgentCard();
         return ResponseEntity.ok(card);
@@ -138,7 +137,6 @@ public class MyAgentExecutor implements AgentExecutor {
                         .timestamp(String.valueOf(Instant.now().toEpochMilli()))
                         .message(createAgentMessage("Task completed successfully! Hi you."))
                         .build())
-                .isFinal(true)
                 .metadata(Map.of(
                         "executionTime", "3000ms",
                         "artifactsGenerated", 4,
@@ -191,7 +189,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "Hello, A2A!"
           }
         ],
@@ -216,7 +213,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "Hello, streaming A2A!"
           }
         ],

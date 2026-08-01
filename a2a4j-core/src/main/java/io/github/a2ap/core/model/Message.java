@@ -68,24 +68,17 @@ public class Message implements SendMessageResponse, SendStreamingMessageRespons
     @JsonProperty("metadata")
     private Map<String, Object> metadata;
 
-    /**
-     * kind type
-     */
-    @JsonProperty("kind")
-    private String kind = "message";
-
     public Message() {
     }
 
     public Message(String messageId, String taskId, String contextId, String role, List<Part> parts,
-                   Map<String, Object> metadata, String kind) {
+                   Map<String, Object> metadata) {
         this.messageId = messageId;
         this.taskId = taskId;
         this.contextId = contextId;
         this.role = role;
         this.parts = parts;
         this.metadata = metadata;
-        this.kind = kind;
     }
 
     public static Builder builder() {
@@ -140,14 +133,6 @@ public class Message implements SendMessageResponse, SendStreamingMessageRespons
         this.metadata = metadata;
     }
 
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -157,19 +142,18 @@ public class Message implements SendMessageResponse, SendStreamingMessageRespons
         Message message = (Message) o;
         return Objects.equals(messageId, message.messageId) && Objects.equals(taskId, message.taskId)
                 && Objects.equals(contextId, message.contextId) && Objects.equals(role, message.role)
-                && Objects.equals(parts, message.parts) && Objects.equals(metadata, message.metadata)
-                && Objects.equals(kind, message.kind);
+                && Objects.equals(parts, message.parts) && Objects.equals(metadata, message.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(messageId, taskId, contextId, role, parts, metadata, kind);
+        return Objects.hash(messageId, taskId, contextId, role, parts, metadata);
     }
 
     @Override
     public String toString() {
         return "Message{" + "messageId=" + messageId + ", taskId=" + taskId + ", contextId=" + contextId + ", role="
-                + role + ", parts=" + parts + ", metadata=" + metadata + ", kind=" + kind + '}';
+                + role + ", parts=" + parts + ", metadata=" + metadata + '}';
     }
 
     /**
@@ -188,8 +172,6 @@ public class Message implements SendMessageResponse, SendStreamingMessageRespons
         private List<Part> parts;
 
         private Map<String, Object> metadata;
-
-        private String kind = "message";
 
         private Builder() {
         }
@@ -224,13 +206,8 @@ public class Message implements SendMessageResponse, SendStreamingMessageRespons
             return this;
         }
 
-        public Builder kind(String kind) {
-            this.kind = kind == null ? "message" : kind;
-            return this;
-        }
-
         public Message build() {
-            return new Message(messageId, taskId, contextId, role, parts, metadata, kind);
+            return new Message(messageId, taskId, contextId, role, parts, metadata);
         }
     }
 

@@ -48,8 +48,8 @@ try {
             throw 'server-hello-world demo Agent exited before its Card became available'
         }
         try {
-            $cardA = Invoke-RestMethod "$agentUrlA/.well-known/agent.json" -TimeoutSec 2
-            $cardB = Invoke-RestMethod "$agentUrlB/.well-known/agent.json" -TimeoutSec 2
+            $cardA = Invoke-RestMethod "$agentUrlA/.well-known/agent-card.json" -TimeoutSec 2
+            $cardB = Invoke-RestMethod "$agentUrlB/.well-known/agent-card.json" -TimeoutSec 2
             if ($cardA.id -eq 'echo-a' -and $cardB.id -eq 'echo-b') {
                 $agentsReady = $true
                 break
@@ -77,10 +77,10 @@ try {
         "--server.port=$GatewayPort", '--a2a.gateway.refresh-interval=1s',
         '--a2a.gateway.agents[0].tenant-id=demo', '--a2a.gateway.agents[0].agent-id=echo-a',
         '--a2a.gateway.agents[0].display-name=Echo Agent A', '--a2a.gateway.agents[0].instances[0].instance-id=smoke-a',
-        "--a2a.gateway.agents[0].instances[0].card-url=$agentUrlA/.well-known/agent.json",
+        "--a2a.gateway.agents[0].instances[0].card-url=$agentUrlA/.well-known/agent-card.json",
         '--a2a.gateway.agents[1].tenant-id=demo', '--a2a.gateway.agents[1].agent-id=echo-b',
         '--a2a.gateway.agents[1].display-name=Echo Agent B', '--a2a.gateway.agents[1].instances[0].instance-id=smoke-b',
-        "--a2a.gateway.agents[1].instances[0].card-url=$agentUrlB/.well-known/agent.json")
+        "--a2a.gateway.agents[1].instances[0].card-url=$agentUrlB/.well-known/agent-card.json")
     $gatewayReady = $false
     for ($i = 0; $i -lt 100; $i++) {
         try {
@@ -159,7 +159,7 @@ try {
     }
     try {
         $sendResponse = $responseBody | ConvertFrom-Json -ErrorAction Stop
-        $gatewayTaskId = [string]$sendResponse.id
+        $gatewayTaskId = [string]$sendResponse.task.id
     }
     catch {
         throw "gateway send response is not a task envelope: $responseBody"
@@ -188,7 +188,7 @@ try {
     $rpcSendResponseBody = Get-Content -Raw -LiteralPath $rpcSendResponseFile -ErrorAction SilentlyContinue
     try {
         $rpcSendResponse = $rpcSendResponseBody | ConvertFrom-Json -ErrorAction Stop
-        $rpcGatewayTaskId = [string]$rpcSendResponse.result.id
+        $rpcGatewayTaskId = [string]$rpcSendResponse.result.task.id
     }
     catch {
         throw "gateway JSON-RPC send response is not a task result: $rpcSendResponseBody"

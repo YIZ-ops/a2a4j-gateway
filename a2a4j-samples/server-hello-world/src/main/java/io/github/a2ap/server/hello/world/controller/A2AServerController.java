@@ -43,7 +43,7 @@ import java.util.Collections;
  * This controller provides the standard A2A protocol endpoints required for agent
  * discovery and communication:
  * <ul>
- * <li><strong>Agent Discovery:</strong> {@code GET /.well-known/agent.json} - Returns the
+ * <li><strong>Agent Discovery:</strong> {@code GET /.well-known/agent-card.json} - Returns the
  * agent card</li>
  * <li><strong>Synchronous Communication:</strong> {@code POST /a2a/server} - JSON-RPC
  * requests with immediate response</li>
@@ -86,7 +86,7 @@ public class A2AServerController {
      * metadata.
      *
      * <p>
-     * <strong>Example request:</strong> <pre>GET /.well-known/agent.json</pre>
+     * <strong>Example request:</strong> <pre>GET /.well-known/agent-card.json</pre>
      *
      * <p>
      * <strong>Example response:</strong> <pre>
@@ -105,7 +105,7 @@ public class A2AServerController {
      *
      * @return ResponseEntity containing the agent card
      */
-    @GetMapping({ ".well-known/agent.json", ".well-known/agent-card.json" })
+    @GetMapping(".well-known/agent-card.json")
     public ResponseEntity<AgentCard> getAgentCard() {
         AgentCard card = a2aServer.getSelfAgentCard();
         return ResponseEntity.ok(card);
@@ -193,8 +193,6 @@ public class A2AServerController {
      *       "role": "user",
      *       "parts": [
      *         {
-     *           "type": "text",
-     *           "kind": "text",
      *           "text": "Hello, A2A!"
      *         }
      *       ]
@@ -243,8 +241,6 @@ public class A2AServerController {
      *       "role": "user",
      *       "parts": [
      *         {
-     *           "type": "text",
-     *           "kind": "text",
      *           "text": "Hello, streaming A2A!"
      *         }
      *       ]
@@ -257,13 +253,13 @@ public class A2AServerController {
      * <p>
      * <strong>Example response stream:</strong> <pre>
      * event: task-update
-     * data: {"jsonrpc":"2.0","result":{"taskId":"abc123","status":"WORKING"},"id":"1"}
+     * data: {"jsonrpc":"2.0","result":{"statusUpdate":{"taskId":"abc123","status":{"state":"TASK_STATE_WORKING"}}},"id":"1"}
      *
      * event: task-update
-     * data: {"jsonrpc":"2.0","result":{"taskId":"abc123","artifact":{"type":"text","content":"Hello!"}},"id":"1"}
+     * data: {"jsonrpc":"2.0","result":{"artifactUpdate":{"taskId":"abc123","artifact":{}}},"id":"1"}
      *
      * event: task-update
-     * data: {"jsonrpc":"2.0","result":{"taskId":"abc123","status":"COMPLETED"},"id":"1"}
+     * data: {"jsonrpc":"2.0","result":{"statusUpdate":{"taskId":"abc123","status":{"state":"TASK_STATE_COMPLETED"}}},"id":"1"}
      * </pre>
      *
      * @param request the JSON-RPC request

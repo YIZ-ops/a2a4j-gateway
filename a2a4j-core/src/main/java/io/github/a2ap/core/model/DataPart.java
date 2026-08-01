@@ -38,7 +38,7 @@ public class DataPart extends Part {
      * Default constructor.
      */
     public DataPart() {
-        super("data");
+        super();
     }
 
     /**
@@ -47,7 +47,7 @@ public class DataPart extends Part {
      * @param data the structured data content
      */
     public DataPart(Object data) {
-        super("data");
+        super();
         this.data = data;
     }
 
@@ -58,7 +58,7 @@ public class DataPart extends Part {
      * @param metadata the metadata
      */
     public DataPart(Object data, Map<String, Object> metadata) {
-        super("data", metadata);
+        super(metadata);
         this.data = data;
     }
 
@@ -94,12 +94,12 @@ public class DataPart extends Part {
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), getKind(), data);
+        return Objects.hash(super.hashCode(), data);
     }
 
     @Override
     public String toString() {
-        return "DataPart{" + "kind='" + getKind() + '\'' + ", data=" + data + ", metadata=" + getMetadata() + '}';
+        return "DataPart{" + "data=" + data + ", metadata=" + getMetadata() + '}';
     }
 
     /**

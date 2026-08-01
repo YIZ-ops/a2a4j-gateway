@@ -91,8 +91,6 @@ Get agent capabilities and metadata information:
 curl -X GET http://localhost:8089/.well-known/agent-card.json
 ```
 
-`/.well-known/agent.json` remains available as a bounded compatibility alias.
-
 **Expected Response Example (with `a2a.server.protocol-bindings: [JSONRPC]`):**
 ```json
 {
@@ -164,7 +162,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "Please help me analyze basic machine learning concepts"
           }
         ],
@@ -192,7 +189,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "Generate a simple Java class example"
           }
         ],
@@ -217,7 +213,7 @@ echo '{
   "params": {
     "message": {
       "role": "user",
-      "parts": [{"kind": "text", "text": "Create a data structure example"}]
+      "parts": [{"text": "Create a data structure example"}]
     }
   },
   "id": "1"
@@ -243,7 +239,7 @@ for i in {1..5}; do
       \"params\": {
         \"message\": {
           \"role\": \"user\",
-          \"parts\": [{\"kind\": \"text\", \"text\": \"Concurrent request $i\"}]
+          \"parts\": [{\"text\": \"Concurrent request $i\"}]
         }
       },
       \"id\": \"concurrent-$i\"

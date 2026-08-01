@@ -387,7 +387,7 @@ MVP 采用“配置为事实源、远程 Card 为声明源”：
 1. 运维在 YAML 中配置逻辑 Agent 和实例的 `cardUrl`；
 2. `AgentCardProbe` 启动时和定时拉取配置中的 `cardUrl`，请求携带
    `A2A-Version: 1.0`；A2A 1.0 的规范路径是 `/.well-known/agent-card.json`，示例 Agent
-   同时兼容 `/.well-known/agent.json`；
+   仅使用 A2A 1.0 的 `/.well-known/agent-card.json`；
 3. 校验 `supportedInterfaces`、`protocolBinding`、`protocolVersion`、Skill、
    输入输出模式，并对 Card endpoint 重新执行 URL 策略；签名/信任源留给后续企业增量；
 4. 规范化后生成内存快照；
@@ -705,11 +705,10 @@ JSON-RPC `error.data` 必须是带 ProtoJSON `Any` 类型信息的数组，例�
 [
   {
     "@type": "type.googleapis.com/google.rpc.ErrorInfo",
-    "reason": "GATEWAY_AGENT_UNAVAILABLE",
-    "domain": "a2a4j.dev",
+    "reason": "AGENT_UNAVAILABLE",
+    "domain": "a2a-protocol.org",
     "metadata": {
-      "requestId": "01J...",
-      "retryable": "true"
+      "gatewayCode": "GATEWAY_AGENT_UNAVAILABLE"
     }
   }
 ]

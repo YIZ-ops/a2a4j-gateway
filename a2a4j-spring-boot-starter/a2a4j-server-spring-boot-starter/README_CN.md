@@ -96,7 +96,7 @@ public class MyAgentApplication {
 
 你的 A2A 服务器将在配置的 URL 上可用，提供以下端点：
 
-- `GET /.well-known/agent.json` - Agent Card 发现
+- `GET /.well-known/agent-card.json` - Agent Card 发现
 - `POST /a2a/server` - 同步和流式请求的 JSON-RPC 端点
 
 ## 配置属性

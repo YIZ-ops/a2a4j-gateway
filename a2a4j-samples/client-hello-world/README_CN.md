@@ -49,8 +49,8 @@ java -jar target/client-hello-world-*.jar
 启动客户端只会启动它自己的 HTTP 应用，不会自动发送消息。请调用下面的客户端入口；首次调用时客户端会
 发现服务端 Card 并发送请求。默认服务端地址为 `http://localhost:8089`，可在配置文件中修改。
 
-当前客户端使用 A2A 1.0 协议：先请求 `/.well-known/agent-card.json`（失败时回退到
-`/.well-known/agent.json`），再自动发送 `A2A-Version: 1.0` 和 JSON-RPC 方法
+当前客户端使用 A2A 1.0 协议：先请求 `/.well-known/agent-card.json`，再自动发送
+`A2A-Version: 1.0` 和 JSON-RPC 方法
 `SendMessage` 或 `SendStreamingMessage`。客户端自身提供以下测试入口：
 
 ```text

@@ -130,19 +130,19 @@ try {
     $processes += Start-Process java -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logRoot 'agent-b.out') `
         -RedirectStandardError (Join-Path $logRoot 'agent-b.err') -ArgumentList @('-jar', $agentJar,
             '--spring.profiles.active=echo-b', "--server.port=$AgentPortB")
-    Wait-Http "http://127.0.0.1:$AgentPortA/.well-known/agent.json"
-    Wait-Http "http://127.0.0.1:$AgentPortB/.well-known/agent.json"
+    Wait-Http "http://127.0.0.1:$AgentPortA/.well-known/agent-card.json"
+    Wait-Http "http://127.0.0.1:$AgentPortB/.well-known/agent-card.json"
     $processes += Start-Process java -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logRoot 'gateway.out') `
         -RedirectStandardError (Join-Path $logRoot 'gateway.err') -ArgumentList @('-jar', $gatewayJar,
             "--server.port=$GatewayPort", '--a2a.gateway.refresh-interval=1s',
             '--a2a.gateway.agents[0].tenant-id=demo', '--a2a.gateway.agents[0].agent-id=echo-a',
             '--a2a.gateway.agents[0].display-name=Echo Agent A',
             '--a2a.gateway.agents[0].instances[0].instance-id=perf-a',
-            "--a2a.gateway.agents[0].instances[0].card-url=http://127.0.0.1:$AgentPortA/.well-known/agent.json",
+            "--a2a.gateway.agents[0].instances[0].card-url=http://127.0.0.1:$AgentPortA/.well-known/agent-card.json",
             '--a2a.gateway.agents[1].tenant-id=demo', '--a2a.gateway.agents[1].agent-id=echo-b',
             '--a2a.gateway.agents[1].display-name=Echo Agent B',
             '--a2a.gateway.agents[1].instances[0].instance-id=perf-b',
-            "--a2a.gateway.agents[1].instances[0].card-url=http://127.0.0.1:$AgentPortB/.well-known/agent.json")
+            "--a2a.gateway.agents[1].instances[0].card-url=http://127.0.0.1:$AgentPortB/.well-known/agent-card.json")
     Wait-Http "http://127.0.0.1:$GatewayPort/actuator/health"
     Start-Sleep -Seconds 2
 
@@ -151,7 +151,7 @@ try {
         $SequentialRequests, 1)
     $concurrentLatencies = [GatewayPerfProbe]::Run("http://127.0.0.1:$GatewayPort/message:send", $apiKey, $payload,
         $ConcurrentRequests, $Concurrency)
-    $upstreamPayload = '{"jsonrpc":"2.0","id":"g10","method":"SendMessage","params":{"message":{"role":"ROLE_USER","parts":[{"kind":"text","text":"g10-upstream"}]}}}'
+    $upstreamPayload = '{"jsonrpc":"2.0","id":"g10","method":"SendMessage","params":{"message":{"role":"ROLE_USER","parts":[{"text":"g10-upstream"}]}}}'
     $upstreamLatencies = [GatewayPerfProbe]::Run("http://127.0.0.1:$AgentPortA/a2a/server", '', $upstreamPayload,
         $SequentialRequests, 1)
 

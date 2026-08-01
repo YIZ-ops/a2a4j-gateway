@@ -87,8 +87,6 @@ curl -X GET http://localhost:8089/actuator/health
 curl -X GET http://localhost:8089/.well-known/agent-card.json
 ```
 
-`/.well-known/agent.json` 仍作为兼容别名保留。
-
 **预期响应示例（配置 `a2a.server.protocol-bindings: [JSONRPC]` 时）：**
 ```json
 {
@@ -160,7 +158,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "请帮我分析一下机器学习的基本概念"
           }
         ],
@@ -188,7 +185,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "生成一个简单的 Java 类示例"
           }
         ],
@@ -213,7 +209,7 @@ echo '{
   "params": {
     "message": {
       "role": "user",
-      "parts": [{"kind": "text", "text": "创建一个数据结构示例"}]
+      "parts": [{"text": "创建一个数据结构示例"}]
     }
   },
   "id": "1"
@@ -240,7 +236,7 @@ for i in {1..5}; do
       \"params\": {
         \"message\": {
           \"role\": \"user\",
-          \"parts\": [{\"kind\": \"text\", \"text\": \"并发请求 $i\"}]
+          \"parts\": [{\"text\": \"并发请求 $i\"}]
         }
       },
       \"id\": \"concurrent-$i\"

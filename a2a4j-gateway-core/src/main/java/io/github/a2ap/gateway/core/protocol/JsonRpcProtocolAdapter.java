@@ -33,7 +33,6 @@ import io.github.a2ap.gateway.api.model.ProtocolDescriptor;
 import io.github.a2ap.gateway.api.model.TargetHint;
 import io.github.a2ap.gateway.api.spi.ProtocolAdapter;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -133,7 +132,7 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             Map<String, Object> params = new LinkedHashMap<>();
             if (command.operation() == GatewayCommand.Operation.SEND_MESSAGE
                     || command.operation() == GatewayCommand.Operation.SEND_STREAMING_MESSAGE) {
-                params.put("message", normalizeMessageParts(command.message()));
+                params.put("message", command.message());
             }
             else {
                 params.putAll(command.message());
@@ -187,35 +186,6 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
                 metadata.put(GatewayHeaders.TRACESTATE, tracestate);
             }
         }
-    }
-
-    /**
-     * HTTP+JSON callers commonly omit {@code kind} for text parts. A typed A2A
-     * JSON-RPC Server needs that discriminator to deserialize {@code Part}, so
-     * add it while converting bindings without changing the inbound payload.
-     */
-    private Map<String, Object> normalizeMessageParts(Map<String, Object> message) {
-        Map<String, Object> normalized = new LinkedHashMap<>(message);
-        Object parts = message.get("parts");
-        if (!(parts instanceof List<?> sourceParts)) {
-            return normalized;
-        }
-        List<Object> normalizedParts = new ArrayList<>(sourceParts.size());
-        for (Object source : sourceParts) {
-            if (source instanceof Map<?, ?> sourcePart) {
-                Map<String, Object> part = new LinkedHashMap<>();
-                sourcePart.forEach((key, value) -> part.put(String.valueOf(key), value));
-                if (!part.containsKey("kind") && part.containsKey("text")) {
-                    part.put("kind", "text");
-                }
-                normalizedParts.add(part);
-            }
-            else {
-                normalizedParts.add(source);
-            }
-        }
-        normalized.put("parts", normalizedParts);
-        return normalized;
     }
 
     private static void copyTraceHeaders(GatewayCommand command, Map<String, String> headers) {
@@ -285,11 +255,7 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
         JsonNode task = result != null && result.has("task") ? result.get("task") : result;
         String taskId = text(task, "id");
         String contextId = text(task, "contextId");
-        JsonNode update = result == null ? null : result.has("statusUpdate") ? result.get("statusUpdate")
-                : result.has("artifactUpdate") ? result.get("artifactUpdate")
-                        // Server Starter streams a direct TaskStatusUpdateEvent / TaskArtifactUpdateEvent
-                        // as result, rather than wrapping it in statusUpdate/artifactUpdate.
-                        : result;
+        JsonNode update = streamingUpdate(result);
         if (taskId == null) {
             taskId = text(update, "taskId");
         }
@@ -375,13 +341,12 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
 
     private GatewayEvent.Type eventType(JsonNode body, boolean terminal, String taskId) {
         JsonNode result = body == null ? null : body.get("result");
-        if (result != null && (result.has("artifactUpdate") || result.has("artifact"))) {
+        JsonNode update = streamingUpdate(result);
+        if (isArtifactUpdate(result, update)) {
             return GatewayEvent.Type.TASK_ARTIFACT;
         }
-        if (result != null && result.has("statusUpdate")) {
-            JsonNode statusUpdate = result.get("statusUpdate");
-            if ((statusUpdate.has("final") && statusUpdate.get("final").asBoolean())
-                    || isTerminalStatus(statusUpdate.get("status"))) {
+        if (isStatusUpdate(result, update)) {
+            if (isTerminalStatus(update.get("status"))) {
                 return GatewayEvent.Type.TASK_COMPLETED;
             }
             return GatewayEvent.Type.TASK_STATUS;
@@ -390,6 +355,28 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             return taskId == null ? GatewayEvent.Type.TASK_STATUS : GatewayEvent.Type.TASK_COMPLETED;
         }
         return GatewayEvent.Type.TASK_STATUS;
+    }
+
+    /** Returns the event payload from an A2A 1.0 stream wrapper. */
+    private JsonNode streamingUpdate(JsonNode result) {
+        if (result == null || !result.isObject()) {
+            return null;
+        }
+        if (result.has("statusUpdate")) {
+            return result.get("statusUpdate");
+        }
+        if (result.has("artifactUpdate")) {
+            return result.get("artifactUpdate");
+        }
+        return null;
+    }
+
+    private boolean isArtifactUpdate(JsonNode result, JsonNode update) {
+        return result != null && result.has("artifactUpdate");
+    }
+
+    private boolean isStatusUpdate(JsonNode result, JsonNode update) {
+        return result != null && result.has("statusUpdate");
     }
 
     private boolean isTerminalStatus(JsonNode status) {

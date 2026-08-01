@@ -85,8 +85,7 @@ a2a4j/
 ```
 
 当前运行时使用 A2A 1.0 方法名：`SendMessage`、`SendStreamingMessage`、`GetTask`、`ListTasks`、`CancelTask` 和
-`SubscribeToTask`。Agent Card 主路径为 `/.well-known/agent-card.json`，样例同时保留
-`/.well-known/agent.json` 兼容别名。旧版 0.2.1 方法名 `message/send`、`message/stream` 会被 1.0 Dispatcher 拒绝。
+`SubscribeToTask`。Agent Card 路径为 `/.well-known/agent-card.json`；旧版 Agent Card 路径和 0.2.1 方法名均不支持。
 
 #### 实现对外 EndPoint 端点
 
@@ -99,7 +98,7 @@ public class MyA2AController {
     @Autowired
     private final Dispatcher a2aDispatch;
 
-    @GetMapping({ "/.well-known/agent-card.json", "/.well-known/agent.json" })
+    @GetMapping("/.well-known/agent-card.json")
     public ResponseEntity<AgentCard> getAgentCard() {
         AgentCard card = a2aServer.getSelfAgentCard();
         return ResponseEntity.ok(card);
@@ -135,7 +134,6 @@ public class MyAgentExecutor implements AgentExecutor {
                         .timestamp(String.valueOf(Instant.now().toEpochMilli()))
                         .message(createAgentMessage("Task completed successfully! Hi you."))
                         .build())
-                .isFinal(true)
                 .metadata(Map.of(
                         "executionTime", "3000ms",
                         "artifactsGenerated", 4,
@@ -188,7 +186,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "你好，A2A！"
           }
         ],
@@ -213,7 +210,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "你好，流式 A2A！"
           }
         ],

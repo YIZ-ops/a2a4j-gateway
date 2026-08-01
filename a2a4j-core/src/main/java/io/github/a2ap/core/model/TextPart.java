@@ -37,7 +37,7 @@ public class TextPart extends Part {
      * Default constructor
      */
     public TextPart() {
-        super("text");
+        super();
     }
 
     /**
@@ -46,7 +46,7 @@ public class TextPart extends Part {
      * @param text The text content
      */
     public TextPart(String text) {
-        super("text");
+        super();
         this.text = text;
     }
 
@@ -80,12 +80,12 @@ public class TextPart extends Part {
 
     @Override
     public int hashCode() {
-        return Objects.hash(getKind(), text);
+        return Objects.hash(text);
     }
 
     @Override
     public String toString() {
-        return "TextPart{" + "kind='" + getKind() + '\'' + ", text='" + text + '\'' + '}';
+        return "TextPart{" + "text='" + text + '\'' + '}';
     }
 
     /**

@@ -204,7 +204,6 @@ public class DefaultA2AServer implements A2AServer {
             TaskStatusUpdateEvent event = TaskStatusUpdateEvent.builder()
                 .taskId(taskId)
                 .status(taskStatus)
-                .isFinal(true)
                 .build();
             eventQueue.enqueueEvent(event);
             eventQueue.close();
@@ -279,7 +278,6 @@ public class DefaultA2AServer implements A2AServer {
             TaskStatusUpdateEvent finalEvent = TaskStatusUpdateEvent.builder()
                 .taskId(taskId)
                 .status(task.getStatus())
-                .isFinal(true)
                 .build();
             return Flux.just(finalEvent);
         }

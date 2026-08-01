@@ -43,10 +43,12 @@ class ReactorNettyAgentTransportTest {
     void sendsProtocolHeadersAndOutboundCredentialsThroughPooledTransport() {
         AtomicReference<String> authorization = new AtomicReference<>();
         AtomicReference<String> version = new AtomicReference<>();
+        AtomicReference<String> method = new AtomicReference<>();
         DisposableServer server = HttpServer.create().host("127.0.0.1").port(0)
                 .handle((request, response) -> {
                     authorization.set(request.requestHeaders().get("Authorization"));
                     version.set(request.requestHeaders().get("A2A-Version"));
+                    method.set(request.method().name());
                     return response.status(200).sendString(Mono.just("{\"ok\":true}"));
                 }).bindNow();
         ReactorNettyAgentTransport transport = new ReactorNettyAgentTransport(
@@ -60,6 +62,7 @@ class ReactorNettyAgentTransportTest {
             assertEquals("{\"ok\":true}", response.body());
             assertEquals("Bearer secret", authorization.get());
             assertEquals("1.0", version.get());
+            assertEquals("POST", method.get());
         }
         finally {
             transport.close();
@@ -91,9 +94,46 @@ class ReactorNettyAgentTransportTest {
         }
     }
 
+    @Test
+    void sendsHttpJsonMethodPathQueryAndBodyWithoutChangingTheJsonRpcDefault() {
+        AtomicReference<String> method = new AtomicReference<>();
+        AtomicReference<String> uri = new AtomicReference<>();
+        AtomicReference<String> body = new AtomicReference<>();
+        DisposableServer server = HttpServer.create().host("127.0.0.1").port(0)
+                .handle((request, response) -> request.receive().aggregate().asString().defaultIfEmpty("")
+                        .flatMap(payload -> {
+                            method.set(request.method().name());
+                            uri.set(request.uri());
+                            body.set(payload);
+                            return Mono.from(response.status(200).sendString(Mono.just("{}")));
+                        })).bindNow();
+        ReactorNettyAgentTransport transport = new ReactorNettyAgentTransport(
+                new AgentCardUrlPolicy(true, true, Set.of(), 1024), Duration.ofSeconds(2), Duration.ofSeconds(3), 1024);
+        try {
+            OutboundResponse response = transport.exchange(httpInstance(server.port()), new OutboundRequest(
+                    ProtocolDescriptor.httpJson(false), "http://127.0.0.1:" + server.port()
+                            + "/a2a/tasks/task-1?historyLength=10", "", Map.of(), "gateway-task", "GET"), null)
+                    .blockFirst(Duration.ofSeconds(3));
+            assertEquals(200, response.statusCode());
+            assertEquals("GET", method.get());
+            assertEquals("/a2a/tasks/task-1?historyLength=10", uri.get());
+            assertEquals("", body.get());
+        }
+        finally {
+            transport.close();
+            server.disposeNow();
+        }
+    }
+
     private AgentInstance instance(int port) {
         return new AgentInstance("instance-1", "http://127.0.0.1:" + port + "/card",
                 List.of(new AgentInterface("jsonrpc", "http://127.0.0.1:" + port + "/a2a", "JSONRPC", "1.0",
+                null)), 1, null, AgentInstance.HealthStatus.HEALTHY, "hash", Instant.now());
+    }
+
+    private AgentInstance httpInstance(int port) {
+        return new AgentInstance("instance-1", "http://127.0.0.1:" + port + "/card",
+                List.of(new AgentInterface("http", "http://127.0.0.1:" + port + "/a2a", "HTTP+JSON", "1.0",
                         null)), 1, null, AgentInstance.HealthStatus.HEALTHY, "hash", Instant.now());
     }
 

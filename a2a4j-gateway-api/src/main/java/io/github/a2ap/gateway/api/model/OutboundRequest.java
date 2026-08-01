@@ -21,7 +21,15 @@ import java.util.Objects;
 
 /** Immutable request emitted by a protocol adapter for an upstream Agent. */
 public record OutboundRequest(ProtocolDescriptor protocol, String endpointUrl, String body,
-        Map<String, String> headers, String gatewayTaskId) {
+        Map<String, String> headers, String gatewayTaskId, String httpMethod) {
+
+    private static final String DEFAULT_HTTP_METHOD = "POST";
+
+    /** Creates a POST outbound request, preserving the original request contract. */
+    public OutboundRequest(ProtocolDescriptor protocol, String endpointUrl, String body,
+            Map<String, String> headers, String gatewayTaskId) {
+        this(protocol, endpointUrl, body, headers, gatewayTaskId, DEFAULT_HTTP_METHOD);
+    }
 
     /** Creates a validated immutable outbound request. */
     public OutboundRequest {
@@ -29,6 +37,14 @@ public record OutboundRequest(ProtocolDescriptor protocol, String endpointUrl, S
         requireText(endpointUrl, "endpointUrl");
         body = body == null ? "" : body;
         headers = headers == null ? Map.of() : Map.copyOf(headers);
+        httpMethod = requireHttpMethod(httpMethod);
+    }
+
+    private static String requireHttpMethod(String value) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException("httpMethod must not be blank");
+        }
+        return value.toUpperCase(java.util.Locale.ROOT);
     }
 
     private static void requireText(String value, String name) {

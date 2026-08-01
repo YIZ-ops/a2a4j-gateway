@@ -345,7 +345,7 @@ class A2AServerStarterIntegrationTest {
     @Test
     void shouldAutoConfigureA2AServer() {
         ResponseEntity<AgentCard> response = restTemplate.getForEntity(
-            "/.well-known/agent.json", AgentCard.class);
+            "/.well-known/agent-card.json", AgentCard.class);
         
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isNotNull();

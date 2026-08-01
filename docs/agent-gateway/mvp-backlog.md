@@ -268,7 +268,7 @@ Regression
 
 - `gateway-hello-world` 的 `*-exec.jar` 只启动 Gateway。`echo-a` 和 `echo-b` 是两个独立的
   `server-hello-world` 进程，分别通过 `echo-a`/`echo-b` Spring profile 启动；二者由 Server Starter
-  发布 `/.well-known/agent-card.json`（以及兼容别名 `/.well-known/agent.json`），并真实执行
+  发布 `/.well-known/agent-card.json`，并真实执行
   `DemoAgentExecutor`。示例 Card 仅声明实际实现的 A2A 1.0 JSON-RPC binding。
 - Gateway 默认使用开发 API Key；生产环境切换 JWT Resource Server，并通过环境变量或外部 Secret
   Provider 注入密钥。`tools/g9-smoke.ps1` 覆盖双 Agent 健康、目标路由、目录 API、未认证/版本拒绝和成功审计。
@@ -290,13 +290,13 @@ Regression
 当前验证快照（2026-08-01）：
 
 ```text
-mvnw.cmd clean test -DskipTests=false -Dmaven.clean.failOnError=false -> 13 个 Reactor 模块，247 tests，0 failures/errors/skipped
+mvnw.cmd clean test -DskipTests=false -Dmaven.clean.failOnError=false -> 13 个 Reactor 模块，246 tests，0 failures/errors/skipped
 mvnw.cmd package -DskipTests           -> 通过（Gateway 与 Server sample 分别产出 `gateway-hello-world-0.0.1-exec.jar`、`server-hello-world-0.0.1-exec.jar`；避免运行中的普通 jar 被 Windows 锁定）
 tools/g9-smoke.ps1 (18191/18192/18199) -> 通过（两个独立 Server Starter Agent、health、401、版本拒绝、目录、显式 Agent 路由、Skill-only 路由、真实 HTTP+JSON/JSON-RPC SendMessage 与 SendStreamingMessage→GetTask Route、审计）
 tools/g10-osv-scan.ps1                 -> 通过（87 runtime dependencies，HIGH/CRITICAL=0）
 tools/g10-performance.ps1              -> 通过（80 sequential/40 concurrent/concurrency=8，报告含 p95/p99）
 tools/g10-release-gates.ps1            -> 通过（target/release-gates/mvp-release-gates.json）
-GatewayHttpJsonDataPlaneE2eTest        -> 14 个 WebFlux + Reactor Netty HTTP+JSON/JSON-RPC 入站、200 并发 SSE/客户端取消/双实例分布/双上游/故障与版本/授权/任务操作等价/租户隔离/真实 RSA JWT 过滤链 E2E 通过
+GatewayHttpJsonDataPlaneE2eTest        -> 15 个 WebFlux + Reactor Netty HTTP+JSON/JSON-RPC 入站、200 并发 SSE/客户端取消/双实例分布/双上游/故障与版本/授权/任务操作等价/租户隔离/真实 RSA JWT 过滤链 E2E 通过
 DefaultAgentInterfaceSelectorTest      -> Binding 优先级、fallback 和拒绝规则通过
 GatewayStreamingForwarderTest          -> 下游取消传播单测通过
 git diff --check                        -> 通过
@@ -311,12 +311,12 @@ git diff --check                        -> 通过
 - [x] 增加 Skill-only 路由回归：`X-A2A-Target-Skill: code-generation` 在默认样例中唯一选中 `echo-a`；多个 Agent 声明同一 Skill 时仍按冲突策略拒绝歧义请求。
 - [x] 示例流式能力改由真实 `DemoAgentExecutor` 的 `RequestContext`/`EventQueue` 生命周期提供：首帧 `TASK_STATE_WORKING/final:false`，中间包含状态和 Artifact 事件，终帧 `TASK_STATE_COMPLETED/final:true`，所有事件共享同一 Task ID。
 - [x] 删除 Gateway 进程内 `SampleAgentController` HTTP fixture；smoke 通过 Gateway 发现并转发至两个独立 Server Starter Agent，验证真实 Card、Skill 和执行链路。
-- [x] 修复 HTTP+JSON 入站到 JSON-RPC 上游的 Part 判别字段转换：Gateway 为仅含 `text` 的 HTTP+JSON Part 补充 `kind: text`，使其可被 A2A Core 的类型化 JSON-RPC Server 正确反序列化；`JsonRpcProtocolAdapterTest` 和真实 smoke 均覆盖。
+- [x] 修正 HTTP+JSON 入站到 JSON-RPC 上游的 Part 结构：文本 Part 直接使用 A2A 1.0 的 `text`/`mediaType` 字段，Gateway 不生成 A2A v0.3 的 `kind` 判别字段；`JsonRpcProtocolAdapterTest` 和真实 smoke 均覆盖。
 - [x] 更新配置/API 参考，补充多 Skill Card 示例、Skill 路由/权限和 SSE 客户端读取说明。
 - [x] 将配置与接口契约拆分：`configuration.md` 只保留启动、注册、安全和运行限制；新增 `api-reference.md`，按当前 Controller/Adapter 核对并完整列出目录、HTTP+JSON、JSON-RPC（含 Push/Card 方法）、SSE、任务、错误和 sample Actuator 端点。
 - [x] 补充 JSON-RPC 任务调用示例，并更正 Push 边界：Push 方法目前仅被 Adapter 识别，MVP 尚未实现 Gateway Task ID 到上游 Task ID 的映射、配置持久化或回调代理；文档明确要求需要 Push 时直接调用支持该能力的 Agent。
-- [x] 修正 JSON-RPC 文本 Part 示例并加入真实 smoke：JSON-RPC 入站接受 A2A fixture 的 `text`/`mediaType` Part；Gateway 在任何文本 Part 缺失时为 JSON-RPC 上游补齐 `kind: text`。smoke 现覆盖真实 JSON-RPC `SendMessage→GetTask`。
-- [x] 修正真实 Server Starter 流式事件的 Task ID 提取：其 JSON-RPC SSE `result` 可直接是 `TaskStatusUpdateEvent`/`TaskArtifactUpdateEvent`，而非 `statusUpdate`/`artifactUpdate` wrapper；Gateway 现提取并改写直接 `result.taskId`/`contextId`，真实 `SendStreamingMessage→GetTask` smoke 固化回归。
+- [x] 修正 JSON-RPC 文本 Part 示例并加入真实 smoke：JSON-RPC 入站和出站均使用不带 `kind` 的 A2A 1.0 `text`/`mediaType` Part。smoke 现覆盖真实 JSON-RPC `SendMessage→GetTask`。
+- [x] 固化 A2A 1.0 流式事件 wrapper：JSON-RPC SSE `result` 使用 `statusUpdate`/`artifactUpdate`，Gateway 按 oneof wrapper 提取并改写 `taskId`/`contextId`，真实 `SendStreamingMessage→GetTask` smoke 固化回归。
 - [x] 回归验证：Gateway sample 测试、全仓 Maven 测试、`package -DskipTests` 和隔离端口 `g9-smoke.ps1` 均通过。
 - [x] 同步 `server-hello-world` 与 `client-hello-world` 的 `README.md` 和 `README_CN.md`：使用 A2A 1.0 方法名、Agent Card 主路径、`A2A-Version: 1.0` 和当前 Client 本地入口。
 

@@ -38,9 +38,9 @@
 JSON-RPC 的 `GetTask`、`CancelTask`、`SubscribeToTask` 返回 `GATEWAY_ROUTE_NOT_FOUND`，表示 Gateway
 无法以“认证租户 + Gateway Task ID”找到创建任务时保存的内存路由。它不是 JSON-RPC 请求关联 ID 错误。
 
-1. 先确认 `params.id` 是发送响应中的 **Gateway Task ID**：HTTP+JSON 非流式响应使用根级 `id`，JSON-RPC
-   非流式响应使用 `result.id`，JSON-RPC 流式响应通常使用首个事件的 `result.taskId`（部分上游会包装为
-   `result.statusUpdate.taskId` 或 `result.artifactUpdate.taskId`）。不要使用 JSON-RPC 顶层的 `id`；例如
+1. 先确认 `params.id` 是发送响应中的 **Gateway Task ID**：HTTP+JSON 非流式响应使用 `task.id`，JSON-RPC
+   非流式响应使用 `result.task.id`，JSON-RPC 流式响应使用首个事件的
+   `result.statusUpdate.taskId` 或 `result.artifactUpdate.taskId`。不要使用 JSON-RPC 顶层的 `id`；例如
    `"id":"send-001"` 只是请求关联 ID，不能用于 `GetTask`。
 2. 用创建任务时同一个租户/API Key/JWT 调用。跨租户查询会刻意返回同一个 404，避免泄露 Task ID。
 3. 确认 Gateway 没有重启，且 Task Route 没有超过 `task-route-ttl`（默认 24h）或因
@@ -50,7 +50,7 @@ JSON-RPC 的 `GetTask`、`CancelTask`、`SubscribeToTask` 返回 `GATEWAY_ROUTE_
 正确的调用形状：
 
 ```json
-{"jsonrpc":"2.0","id":"get-001","method":"GetTask","params":{"id":"<JSON-RPC SendMessage 返回的 result.id>"}}
+{"jsonrpc":"2.0","id":"get-001","method":"GetTask","params":{"id":"<JSON-RPC SendMessage 返回的 result.task.id>"}}
 ```
 
 ## 5. 安全检查

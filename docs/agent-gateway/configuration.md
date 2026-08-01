@@ -109,7 +109,7 @@ a2a:
 | `weight` | 实例 | `1` | 加权最少在途选择的权重，必须大于 0。 |
 | `credential-ref` | 实例 | 空 | 出站凭据引用；不设置则不额外携带凭据。 |
 
-Agent 必须在配置的 `card-url` 返回可校验的 A2A 1.0 Card。示例 Server 同时提供 `/.well-known/agent-card.json` 和兼容别名 `/.well-known/agent.json`。
+Agent 必须在配置的 `card-url` 返回可校验的 A2A 1.0 Agent Card。Gateway 只请求配置的 URL；示例 Server 使用 `/.well-known/agent-card.json`。
 
 ### 2.3 从 YAML 到可发现快照
 

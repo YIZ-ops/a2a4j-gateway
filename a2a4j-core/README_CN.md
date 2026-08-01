@@ -53,7 +53,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "Hello, A2A!"
           }
         ],

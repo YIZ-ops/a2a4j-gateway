@@ -67,12 +67,6 @@ public class Task implements SendMessageResponse, SendStreamingMessageResponse {
     @JsonProperty("metadata")
     private Map<String, Object> metadata;
 
-    /**
-     * Event type
-     */
-    @JsonProperty("kind")
-    private String kind = "task";
-
     public Task() {
     }
 
@@ -138,14 +132,6 @@ public class Task implements SendMessageResponse, SendStreamingMessageResponse {
         this.metadata = metadata;
     }
 
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
-    }
-
     @Override
     public boolean equals(Object o) {
         if (this == o)
@@ -153,20 +139,20 @@ public class Task implements SendMessageResponse, SendStreamingMessageResponse {
         if (o == null || getClass() != o.getClass())
             return false;
         Task task = (Task) o;
-        return Objects.equals(id, task.id) && Objects.equals(contextId, task.contextId) && Objects.equals(kind, task.kind)
+        return Objects.equals(id, task.id) && Objects.equals(contextId, task.contextId)
                 && Objects.equals(status, task.status) && Objects.equals(artifacts, task.artifacts)
                 && Objects.equals(history, task.history) && Objects.equals(metadata, task.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, contextId, status, artifacts, history, metadata, kind);
+        return Objects.hash(id, contextId, status, artifacts, history, metadata);
     }
 
     @Override
     public String toString() {
         return "Task{" + "id=" + id + ", contextId=" + contextId + ", status=" + status + ", artifacts=" + artifacts
-                + ", history=" + history + ", metadata=" + metadata + ", kind=" + kind + '}';
+                + ", history=" + history + ", metadata=" + metadata + '}';
     }
 
     /**

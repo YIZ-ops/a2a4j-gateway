@@ -112,7 +112,7 @@ Gateway 基地址示例为 `http://localhost:8099`。所有业务 API 均是租�
       "protocolPolicy": {"protocolVersions": ["1.0"], "protocolBindings": ["JSONRPC", "HTTP+JSON"]},
       "instances": [{
         "instanceId": "echo-a-1",
-        "cardUrl": "http://localhost:8091/.well-known/agent.json",
+        "cardUrl": "http://localhost:8091/.well-known/agent-card.json",
         "healthStatus": "HEALTHY",
         "weight": 1,
         "interfaces": [{"interfaceKey": "jsonrpc", "endpointUrl": "http://localhost:8091/a2a/server", "protocolBinding": "JSONRPC", "protocolVersion": "1.0"}],
@@ -158,10 +158,10 @@ Gateway 基地址示例为 `http://localhost:8099`。所有业务 API 均是租�
 ```text
 event: status-update
 id: event-001
-data: {"statusUpdate":{"taskId":"gateway-task-id","status":{"state":"WORKING"},"final":false}}
+data: {"statusUpdate":{"taskId":"gateway-task-id","status":{"state":"WORKING"}}}
 ```
 
-客户端应持续读取直到终态事件（例如 `final: true`）；断开客户端连接会取消上游连接。`max-event-bytes`、`stream-idle-timeout` 与 `max-concurrent-streams` 约束事件、空闲和并发。
+客户端应持续读取直到收到终态 `status.state`（例如 `TASK_STATE_COMPLETED`）；断开客户端连接会取消上游连接。`max-event-bytes`、`stream-idle-timeout` 与 `max-concurrent-streams` 约束事件、空闲和并发。
 
 ### 4.3 查询与列举任务
 
@@ -179,7 +179,7 @@ data: {"statusUpdate":{"taskId":"gateway-task-id","status":{"state":"WORKING"},"
 
 ### 5.1 基本请求与流式选择
 
-请求必须是 JSON-RPC 2.0 对象，包含非空 `id`、受支持的 `method` 和对象类型的 `params`。文本 Part 可以使用 `text` 与可选的 `mediaType`；Gateway 会在转发给强类型 JSON-RPC 上游时补齐缺失的 `kind: text` 判别字段：
+请求必须是 JSON-RPC 2.0 对象，包含非空 `id`、受支持的 `method` 和对象类型的 `params`。文本 Part 直接使用 `text` 与可选的 `mediaType`；A2A 1.0 不生成或要求 v0.3 的 `kind` 判别字段：
 
 ```json
 {
@@ -193,6 +193,8 @@ data: {"statusUpdate":{"taskId":"gateway-task-id","status":{"state":"WORKING"},"
 ```
 
 `SendStreamingMessage` 与 `SubscribeToTask` 必须使用 `Accept: text/event-stream`；在同步 Accept 下调用会返回 `400 INVALID_ARGUMENT`。反之，在 SSE Accept 下调用非流式方法也返回 `400 INVALID_ARGUMENT`。
+
+SSE 的每个 JSON-RPC `result` 必须使用 A2A 1.0 的 oneof wrapper：`task`、`message`、`statusUpdate` 或 `artifactUpdate`。网关不接受 v0.3 的直接事件对象或 `kind` 判别字段。
 
 ### 5.2 支持的方法
 
@@ -222,7 +224,7 @@ curl.exe -X POST http://localhost:8099/gateway/v1/a2a `
   -H "Content-Type: application/json" -H "Accept: application/json" --data $body
 ```
 
-先从 `SendMessage` 或 `SendStreamingMessage` 响应中保存 Gateway 返回的 Task ID：HTTP+JSON 非流式响应是根级 Task，使用 `id`；JSON-RPC 非流式响应使用 `result.id`；JSON-RPC 流式响应通常使用首个事件的 `result.taskId`。部分上游会包装为 `result.statusUpdate.taskId` 或 `result.artifactUpdate.taskId`，Gateway 同样会改写并支持这些形状。以下任务方法均使用这个 Gateway ID：
+先从 `SendMessage` 或 `SendStreamingMessage` 响应中保存 Gateway 返回的 Task ID：HTTP+JSON 非流式响应使用 `task.id`；JSON-RPC 非流式响应使用 `result.task.id`；JSON-RPC 流式响应使用首个事件的 `result.statusUpdate.taskId` 或 `result.artifactUpdate.taskId`。如果响应是直接 `message`，则没有可查询的 Task。以下任务方法均使用这个 Gateway ID：
 
 Gateway ID 与 Agent 控制台中打印的上游 Task ID **预期不同**。Gateway 创建外部 ID 后，在内存 Task Route 中保存它到租户、调用主体、Agent 实例、Binding 和上游 Task ID 的映射；客户端只能使用 Gateway ID，控制台排障才在受控环境中关联上游 ID，二者都不应互相替换。
 
@@ -290,7 +292,7 @@ curl.exe -N -X POST http://localhost:8099/gateway/v1/a2a `
 控制器接收请求后的错误形状固定为：
 
 ```json
-{"error":{"code":"GATEWAY_AGENT_UNAVAILABLE","message":"selected Agent is no longer available"}}
+{"error":{"code":503,"status":"UNAVAILABLE","message":"selected Agent is no longer available","details":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":"AGENT_UNAVAILABLE","domain":"a2a-protocol.org","metadata":{"gatewayCode":"GATEWAY_AGENT_UNAVAILABLE"}}]}}
 ```
 
 | HTTP | Gateway code | 常见原因 |
@@ -308,7 +310,7 @@ curl.exe -N -X POST http://localhost:8099/gateway/v1/a2a `
 
 ### 6.2 JSON-RPC
 
-JSON-RPC 错误为 `{"jsonrpc":"2.0","id":null,"error":{"code":...,"message":...,"data":{"gatewayCode":...}}}`。
+JSON-RPC 错误为 `{"jsonrpc":"2.0","id":null,"error":{"code":...,"message":...,"data":[{"@type":"type.googleapis.com/google.rpc.ErrorInfo","reason":...,"domain":"a2a-protocol.org","metadata":{"gatewayCode":...}}]}}`。`error.data` 是 ProtoJSON `Any` 详情数组，不是 Gateway 私有对象。
 
 | gatewayCode | JSON-RPC code | HTTP |
 | --- | ---: | ---: |

@@ -49,7 +49,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "Hello, A2A!"
           }
         ],
@@ -75,7 +74,6 @@ curl -X POST http://localhost:8089/a2a/server \
         "role": "user",
         "parts": [
           {
-            "kind": "text",
             "text": "Hello, streaming A2A!"
           }
         ],

@@ -18,7 +18,7 @@
 
 MVP G0-G9 的实施过程、阶段状态和验证命令统一记录在
 [mvp-backlog.md](./mvp-backlog.md)，本文档不再复制逐阶段进度。当前功能基线已通过：全仓库
-`clean test`（247 tests）、HTTP+JSON/JSON-RPC 双入口、200 并发 SSE、客户端取消传播、双实例分布、双上游 Binding、故障/版本/授权/任务操作等价与租户隔离数据面 E2E、真实 RSA JWT Resource Server 过滤链、Sample smoke、目录 API 和默认 Store 指标均有证据；`tools/g10-release-gates.ps1` 已通过完整权限矩阵、OSV/secret/nonblocking 扫描、隔离 smoke 和性能基线，正式 MVP 门槛通过。外部 CI SAST/DAST、BlockHound 和持久化 Store 压测属于企业版增强。
+`clean test`（246 tests）、HTTP+JSON/JSON-RPC 双入口、200 并发 SSE、客户端取消传播、双实例分布、双上游 Binding、故障/版本/授权/任务操作等价与租户隔离数据面 E2E、真实 RSA JWT Resource Server 过滤链、Sample smoke、目录 API 和默认 Store 指标均有证据；`tools/g10-release-gates.ps1` 已通过完整权限矩阵、OSV/secret/nonblocking 扫描、隔离 smoke 和性能基线，正式 MVP 门槛通过。外部 CI SAST/DAST、BlockHound 和持久化 Store 压测属于企业版增强。
 
 ## 已确定的关键决策
 

@@ -39,22 +39,10 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
     private String contextId;
 
     /**
-     * kind type
-     */
-    @JsonProperty("kind")
-    private String kind = "artifact-update";
-
-    /**
      * The new or updated artifact for the task.
      */
     @JsonProperty("artifact")
     private Artifact artifact;
-
-    /**
-     * Flag indicating if this is the final update for the task.
-     */
-    @JsonProperty("final")
-    private Boolean isFinal;
 
     /**
      * Indicates if this artifact appends to a previous one. Omitted if artifact is a
@@ -87,20 +75,16 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
      *
      * @param taskId    The task ID
      * @param contextId The context ID
-     * @param kind      The kind
      * @param artifact  The artifact
-     * @param isFinal   Whether this is the final update
      * @param append    Whether this appends to a previous artifact
      * @param lastChunk Whether this is the last chunk
      * @param metadata  Additional metadata
      */
-    public TaskArtifactUpdateEvent(String taskId, String contextId, String kind, Artifact artifact, Boolean isFinal,
+    public TaskArtifactUpdateEvent(String taskId, String contextId, Artifact artifact,
                                    Boolean append, Boolean lastChunk, Map<String, Object> metadata) {
         this.taskId = taskId;
         this.contextId = contextId;
-        this.kind = kind != null ? kind : "artifact-update";
         this.artifact = artifact;
-        this.isFinal = isFinal;
         this.append = append;
         this.lastChunk = lastChunk;
         this.metadata = metadata;
@@ -143,24 +127,6 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
     }
 
     /**
-     * Gets the kind
-     *
-     * @return The kind
-     */
-    public String getKind() {
-        return kind;
-    }
-
-    /**
-     * Sets the kind
-     *
-     * @param kind The kind to set
-     */
-    public void setKind(String kind) {
-        this.kind = kind != null ? kind : "artifact-update";
-    }
-
-    /**
      * Gets the artifact
      *
      * @return The artifact
@@ -176,24 +142,6 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
      */
     public void setArtifact(Artifact artifact) {
         this.artifact = artifact;
-    }
-
-    /**
-     * Gets whether this is the final update
-     *
-     * @return Whether this is the final update
-     */
-    public Boolean getIsFinal() {
-        return isFinal;
-    }
-
-    /**
-     * Sets whether this is the final update
-     *
-     * @param isFinal Whether this is the final update
-     */
-    public void setIsFinal(Boolean isFinal) {
-        this.isFinal = isFinal;
     }
 
     /**
@@ -258,20 +206,20 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
             return false;
         TaskArtifactUpdateEvent that = (TaskArtifactUpdateEvent) o;
         return Objects.equals(taskId, that.taskId) && Objects.equals(contextId, that.contextId)
-                && Objects.equals(kind, that.kind) && Objects.equals(artifact, that.artifact)
-                && Objects.equals(isFinal, that.isFinal) && Objects.equals(append, that.append)
+                && Objects.equals(artifact, that.artifact)
+                && Objects.equals(append, that.append)
                 && Objects.equals(lastChunk, that.lastChunk) && Objects.equals(metadata, that.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(taskId, contextId, kind, artifact, isFinal, append, lastChunk, metadata);
+        return Objects.hash(taskId, contextId, artifact, append, lastChunk, metadata);
     }
 
     @Override
     public String toString() {
-        return "TaskArtifactUpdateEvent{" + "taskId='" + taskId + '\'' + ", contextId='" + contextId + '\'' + ", kind='"
-                + kind + '\'' + ", artifact=" + artifact + ", isFinal=" + isFinal + ", append=" + append
+        return "TaskArtifactUpdateEvent{" + "taskId='" + taskId + '\'' + ", contextId='" + contextId + '\''
+                + ", artifact=" + artifact + ", append=" + append
                 + ", lastChunk=" + lastChunk + ", metadata=" + metadata + '}';
     }
 
@@ -293,11 +241,7 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
 
         private String contextId;
 
-        private String kind = "artifact-update";
-
         private Artifact artifact;
-
-        private Boolean isFinal;
 
         private Boolean append;
 
@@ -334,17 +278,6 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
         }
 
         /**
-         * Sets the kind
-         *
-         * @param kind The kind
-         * @return This builder for chaining
-         */
-        public Builder kind(String kind) {
-            this.kind = kind != null ? kind : "artifact-update";
-            return this;
-        }
-
-        /**
          * Sets the artifact
          *
          * @param artifact The artifact
@@ -352,17 +285,6 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
          */
         public Builder artifact(Artifact artifact) {
             this.artifact = artifact;
-            return this;
-        }
-
-        /**
-         * Sets whether this is the final update
-         *
-         * @param isFinal Whether this is the final update
-         * @return This builder for chaining
-         */
-        public Builder isFinal(Boolean isFinal) {
-            this.isFinal = isFinal;
             return this;
         }
 
@@ -405,7 +327,7 @@ public class TaskArtifactUpdateEvent implements SendStreamingMessageResponse {
          * @return The built instance
          */
         public TaskArtifactUpdateEvent build() {
-            return new TaskArtifactUpdateEvent(taskId, contextId, kind, artifact, isFinal, append, lastChunk, metadata);
+            return new TaskArtifactUpdateEvent(taskId, contextId, artifact, append, lastChunk, metadata);
         }
 
     }

@@ -28,7 +28,7 @@ import org.springframework.web.reactive.config.WebFluxConfigurer;
  * This sample demonstrates a complete A2A (Agent2Agent) protocol server implementation
  * using the A2A4J Spring Boot Starter. The application provides:
  * <ul>
- * <li>Agent Card discovery endpoint at {@code /.well-known/agent.json}</li>
+ * <li>Agent Card discovery endpoint at {@code /.well-known/agent-card.json}</li>
  * <li>JSON-RPC endpoints for synchronous and streaming communication</li>
  * <li>A demo agent executor that simulates realistic task processing</li>
  * <li>CORS configuration for cross-origin requests</li>

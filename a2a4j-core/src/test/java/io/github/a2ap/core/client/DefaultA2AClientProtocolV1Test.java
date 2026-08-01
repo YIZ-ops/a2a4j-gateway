@@ -24,7 +24,7 @@ import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 import reactor.netty.http.server.HttpServer;
 
-/** Verifies that the legacy client emits the A2A 1.0 JSON-RPC wire names and version header. */
+/** Verifies that the client emits the A2A 1.0 JSON-RPC wire names and version header. */
 class DefaultA2AClientProtocolV1Test {
 
     @Test
@@ -37,7 +37,7 @@ class DefaultA2AClientProtocolV1Test {
                 requestBody.set(body);
                 return response.header("Content-Type", "application/json")
                         .sendString(Mono.just("{\"jsonrpc\":\"2.0\",\"id\":\"1\",\"result\":{"
-                                + "\"kind\":\"task\",\"id\":\"task-1\",\"contextId\":\"ctx-1\"}}"))
+                                + "\"task\":{\"id\":\"task-1\",\"contextId\":\"ctx-1\"}}}"))
                         .then();
             });
         }).bindNow();

@@ -41,7 +41,6 @@ class TaskTest {
         assertNull(task.getArtifacts());
         assertNull(task.getHistory());
         assertNull(task.getMetadata());
-        assertEquals("task", task.getKind());
     }
 
     @Test
@@ -62,7 +61,6 @@ class TaskTest {
         assertEquals(artifacts, task.getArtifacts());
         assertEquals(history, task.getHistory());
         assertEquals(metadata, task.getMetadata());
-        assertEquals("task", task.getKind());
     }
 
     @Test
@@ -83,15 +81,12 @@ class TaskTest {
         metadata.put("priority", "high");
         task.setMetadata(metadata);
         
-        task.setKind("custom-task");
-        
         assertEquals("task-123", task.getId());
         assertEquals("context-456", task.getContextId());
         assertEquals(TaskStatus.COMPLETED, task.getStatus());
         assertEquals(artifacts, task.getArtifacts());
         assertEquals(history, task.getHistory());
         assertEquals(metadata, task.getMetadata());
-        assertEquals("custom-task", task.getKind());
     }
 
     @Test
@@ -116,7 +111,6 @@ class TaskTest {
         assertEquals(artifacts, task.getArtifacts());
         assertEquals(history, task.getHistory());
         assertEquals(metadata, task.getMetadata());
-        assertEquals("task", task.getKind());
     }
 
     @Test
@@ -201,7 +195,6 @@ class TaskTest {
         
         assertTrue(toString.contains("Task"));
         assertTrue(toString.contains("id=null"));
-        assertTrue(toString.contains("kind=task"));
     }
 
     @Test
@@ -287,22 +280,6 @@ class TaskTest {
         assertEquals(metadata, task.getMetadata());
         assertEquals("high", task.getMetadata().get("priority"));
         assertEquals("test", task.getMetadata().get("category"));
-    }
-
-    @Test
-    void testTaskKindDefaultValue() {
-        Task task = new Task();
-        assertEquals("task", task.getKind());
-        
-        Task builtTask = Task.builder().id("test").build();
-        assertEquals("task", builtTask.getKind());
-    }
-
-    @Test
-    void testTaskKindCustomValue() {
-        Task task = new Task();
-        task.setKind("custom-task-type");
-        assertEquals("custom-task-type", task.getKind());
     }
 
     @Test

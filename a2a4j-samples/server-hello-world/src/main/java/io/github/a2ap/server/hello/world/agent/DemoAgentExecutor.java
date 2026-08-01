@@ -214,7 +214,6 @@ public class DemoAgentExecutor implements AgentExecutor {
                         .timestamp(String.valueOf(Instant.now().toEpochMilli()))
                         .message(createAgentMessage(statusMessage))
                         .build())
-                .isFinal(false)
                 .build();
 
         eventQueue.enqueueEvent(workingEvent);
@@ -265,7 +264,6 @@ public class DemoAgentExecutor implements AgentExecutor {
                 .artifact(artifact)
                 .append(append)
                 .lastChunk(lastChunk)
-                .isFinal(false)
                 .metadata(Map.of("artifactType", "text"))
                 .build();
 
@@ -328,7 +326,6 @@ public class DemoAgentExecutor implements AgentExecutor {
                 .artifact(artifact)
                 .append(false)
                 .lastChunk(true)
-                .isFinal(false)
                 .metadata(Map.of("artifactType", "code"))
                 .build();
 
@@ -377,7 +374,6 @@ public class DemoAgentExecutor implements AgentExecutor {
                 .artifact(artifact)
                 .append(false)
                 .lastChunk(true)
-                .isFinal(false)
                 .metadata(Map.of("artifactType", "summary"))
                 .build();
 
@@ -416,7 +412,6 @@ public class DemoAgentExecutor implements AgentExecutor {
                         .message(createAgentMessage(
                                 "Task completed successfully! I have generated a detailed response and example code for you."))
                         .build())
-                .isFinal(true)
                 .metadata(Map.of("executionTime", "3000ms", "artifactsGenerated", 4, "success", true))
                 .build();
 

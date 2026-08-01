@@ -38,7 +38,7 @@ public class FilePart extends Part {
      * Default constructor
      */
     public FilePart() {
-        super("file");
+        super();
     }
 
     /**
@@ -47,7 +47,7 @@ public class FilePart extends Part {
      * @param file The file content
      */
     public FilePart(FileContent file) {
-        super("file");
+        super();
         this.file = file;
     }
 
@@ -58,7 +58,7 @@ public class FilePart extends Part {
      * @param metadata The metadata
      */
     public FilePart(FileContent file, Map<String, Object> metadata) {
-        super("file", metadata);
+        super(metadata);
         this.file = file;
     }
 
@@ -94,12 +94,12 @@ public class FilePart extends Part {
 
     @Override
     public int hashCode() {
-        return Objects.hash(super.hashCode(), getKind(), file);
+        return Objects.hash(super.hashCode(), file);
     }
 
     @Override
     public String toString() {
-        return "FilePart{" + "kind='" + getKind() + '\'' + ", file=" + file + ", metadata=" + getMetadata() + '}';
+        return "FilePart{" + "file=" + file + ", metadata=" + getMetadata() + '}';
     }
 
     /**

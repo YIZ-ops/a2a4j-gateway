@@ -34,7 +34,7 @@ import io.github.a2ap.core.model.AgentCard;
  * - Support various discovery mechanisms and protocols
  * 
  * Discovery mechanisms may include:
- * - HTTP-based discovery via well-known endpoints (/.well-known/agent.json)
+ * - HTTP-based discovery via the A2A 1.0 well-known endpoint (/.well-known/agent-card.json)
  * - Decentralized Identifier (DID) resolution
  * - Registry-based lookups
  * - Direct configuration or injection

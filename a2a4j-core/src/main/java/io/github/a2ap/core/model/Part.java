@@ -36,24 +36,18 @@ import java.util.Objects;
  * - FilePart: File-based content with metadata
  * - DataPart: Structured data content
  * 
- * The class uses Jackson's polymorphic serialization to maintain type information
- * during JSON serialization/deserialization, enabling proper reconstruction of
- * specific part types from generic Part references.
+ * The class uses Jackson's property-based deduction to reconstruct the concrete
+ * part type from the A2A 1.0 payload shape. A2A 1.0 identifies a part by its
+ * oneof field ({@code text}, {@code file}, or {@code data}).
  * 
  * Each part can optionally include metadata for additional context or processing hints.
  */
 @JsonInclude(JsonInclude.Include.NON_NULL)
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "kind", include = JsonTypeInfo.As.EXISTING_PROPERTY)
+@JsonTypeInfo(use = JsonTypeInfo.Id.DEDUCTION)
 @JsonSubTypes({@JsonSubTypes.Type(value = TextPart.class, name = "text"),
         @JsonSubTypes.Type(value = FilePart.class, name = "file"),
         @JsonSubTypes.Type(value = DataPart.class, name = "data")})
 public abstract class Part {
-
-    /**
-     * The kind type of the part. Required field.
-     */
-    @JsonProperty("kind")
-    private String kind;
 
     /**
      * Optional metadata associated with the part.
@@ -64,21 +58,8 @@ public abstract class Part {
     protected Part() {
     }
 
-    protected Part(String kind) {
-        this.kind = kind;
-    }
-
-    protected Part(String kind, Map<String, Object> metadata) {
-        this.kind = kind;
+    protected Part(Map<String, Object> metadata) {
         this.metadata = metadata;
-    }
-
-    public String getKind() {
-        return kind;
-    }
-
-    public void setKind(String kind) {
-        this.kind = kind;
     }
 
     public Map<String, Object> getMetadata() {
@@ -96,17 +77,17 @@ public abstract class Part {
         if (o == null || getClass() != o.getClass())
             return false;
         Part part = (Part) o;
-        return Objects.equals(kind, part.kind) && Objects.equals(metadata, part.metadata);
+        return Objects.equals(metadata, part.metadata);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(kind, metadata);
+        return Objects.hash(metadata);
     }
 
     @Override
     public String toString() {
-        return "Part{" + "kind='" + kind + '\'' + ", metadata=" + metadata + '}';
+        return "Part{" + "metadata=" + metadata + '}';
     }
 
 }

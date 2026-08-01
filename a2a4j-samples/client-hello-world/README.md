@@ -50,7 +50,7 @@ Starting the client only starts its HTTP application; it does not send a message
 client endpoints below to resolve the server Card and send a request. The default server URL is
 `http://localhost:8089` and can be changed in the configuration file.
 
-The client first resolves `/.well-known/agent-card.json` (and falls back to `/.well-known/agent.json`), then sends
+The client first resolves `/.well-known/agent-card.json`, then sends
 `A2A-Version: 1.0` JSON-RPC requests using `SendMessage` or `SendStreamingMessage`. The client application's own
 HTTP endpoints are:
 

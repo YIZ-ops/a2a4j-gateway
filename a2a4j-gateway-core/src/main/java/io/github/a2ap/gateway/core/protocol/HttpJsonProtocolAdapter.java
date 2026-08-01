@@ -32,6 +32,10 @@ import io.github.a2ap.gateway.api.model.PrincipalContext;
 import io.github.a2ap.gateway.api.model.ProtocolDescriptor;
 import io.github.a2ap.gateway.api.model.TargetHint;
 import io.github.a2ap.gateway.api.spi.ProtocolAdapter;
+import java.lang.reflect.Array;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -127,26 +131,72 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
                 .orElseThrow(() -> new IllegalArgumentException("target Agent has no A2A 1.0 HTTP+JSON interface"));
         try {
             Map<String, Object> request = new LinkedHashMap<>();
-            if (isMessageOperation(command.operation())) {
-                request.put("message", command.message());
-            }
-            else {
-                request.putAll(command.message());
-            }
-            if (!command.configuration().isEmpty()) {
-                request.put("configuration", command.configuration());
-            }
-            if (command.gatewayContextId() != null && !command.gatewayContextId().isBlank()) {
-                request.put("contextId", command.gatewayContextId());
-            }
-            if (isTaskOperation(command.operation())) {
-                Object upstreamTaskId = command.metadata().getOrDefault("upstreamTaskId", command.gatewayTaskId());
-                if (upstreamTaskId != null) {
-                    request.put("id", upstreamTaskId);
+            String method;
+            String path;
+            Map<String, Object> query = Map.of();
+            boolean streaming = false;
+            switch (command.operation()) {
+                case SEND_MESSAGE, SEND_STREAMING_MESSAGE -> {
+                    method = "POST";
+                    path = command.operation() == GatewayCommand.Operation.SEND_MESSAGE
+                            ? "message:send" : "message:stream";
+                    streaming = command.operation() == GatewayCommand.Operation.SEND_STREAMING_MESSAGE;
+                    request.put("message", command.message());
+                    if (!command.configuration().isEmpty()) {
+                        request.put("configuration", command.configuration());
+                    }
+                    if (command.gatewayContextId() != null && !command.gatewayContextId().isBlank()) {
+                        request.put("contextId", command.gatewayContextId());
+                    }
                 }
+                case GET_TASK -> {
+                    method = "GET";
+                    path = "tasks/" + pathSegment(taskId(command));
+                    query = queryFields(command.message(), Set.of("id", "taskId", "tenant"));
+                }
+                case LIST_TASKS -> {
+                    method = "GET";
+                    path = "tasks";
+                    query = queryFields(command.message(), Set.of("id", "taskId", "tenant"));
+                }
+                case CANCEL_TASK -> {
+                    method = "POST";
+                    path = "tasks/" + pathSegment(taskId(command)) + ":cancel";
+                    request.putAll(bodyFields(command.message(), Set.of("id", "taskId", "tenant")));
+                }
+                case SUBSCRIBE_TO_TASK -> {
+                    method = "POST";
+                    path = "tasks/" + pathSegment(taskId(command)) + ":subscribe";
+                    streaming = true;
+                    request.putAll(bodyFields(command.message(), Set.of("id", "taskId", "tenant")));
+                }
+                case CREATE_TASK_PUSH_NOTIFICATION_CONFIG -> {
+                    method = "POST";
+                    path = "tasks/" + pathSegment(taskId(command)) + "/pushNotificationConfigs";
+                    request.putAll(bodyFields(command.message(), Set.of("taskId", "tenant")));
+                }
+                case GET_TASK_PUSH_NOTIFICATION_CONFIG -> {
+                    method = "GET";
+                    path = "tasks/" + pathSegment(taskId(command)) + "/pushNotificationConfigs/"
+                            + pathSegment(configId(command));
+                }
+                case LIST_TASK_PUSH_NOTIFICATION_CONFIGS -> {
+                    method = "GET";
+                    path = "tasks/" + pathSegment(taskId(command)) + "/pushNotificationConfigs";
+                    query = queryFields(command.message(), Set.of("id", "taskId", "tenant"));
+                }
+                case DELETE_TASK_PUSH_NOTIFICATION_CONFIG -> {
+                    method = "DELETE";
+                    path = "tasks/" + pathSegment(taskId(command)) + "/pushNotificationConfigs/"
+                            + pathSegment(configId(command));
+                }
+                case GET_EXTENDED_AGENT_CARD -> {
+                    method = "GET";
+                    path = "extendedAgentCard";
+                }
+                default -> throw new IllegalArgumentException("unsupported HTTP+JSON operation: "
+                        + command.operation());
             }
-            boolean streaming = command.operation() == GatewayCommand.Operation.SEND_STREAMING_MESSAGE
-                    || command.operation() == GatewayCommand.Operation.SUBSCRIBE_TO_TASK;
             Map<String, String> headers = new LinkedHashMap<>();
             headers.put("Content-Type", "application/a2a+json");
             headers.put("Accept", streaming ? "text/event-stream" : "application/a2a+json");
@@ -160,8 +210,12 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
             }
             copyTraceHeaders(command, headers);
             return Mono.just(new OutboundRequest(streaming ? ProtocolDescriptor.httpJson(true) : descriptor(),
-                    agentInterface.endpointUrl(), objectMapper.writeValueAsString(request), headers,
-                    command.gatewayTaskId()));
+                    endpoint(agentInterface.endpointUrl(), path, query),
+                    "GET".equals(method) || "DELETE".equals(method) ? "" : objectMapper.writeValueAsString(request),
+                    headers, command.gatewayTaskId(), method));
+        }
+        catch (IllegalArgumentException ex) {
+            return Mono.error(ex);
         }
         catch (Exception ex) {
             return Mono.error(new IllegalArgumentException("could not encode A2A HTTP+JSON request", ex));
@@ -291,16 +345,131 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
             case "CANCEL_TASK", "CancelTask", "tasks:cancel" -> GatewayCommand.Operation.CANCEL_TASK;
             case "SUBSCRIBE_TO_TASK", "SubscribeToTask", "tasks:subscribe" ->
                     GatewayCommand.Operation.SUBSCRIBE_TO_TASK;
-            case "CREATE_TASK_PUSH_NOTIFICATION_CONFIG" ->
+            case "CREATE_TASK_PUSH_NOTIFICATION_CONFIG", "CreateTaskPushNotificationConfig",
+                    "tasks:pushNotificationConfigs:create" ->
                     GatewayCommand.Operation.CREATE_TASK_PUSH_NOTIFICATION_CONFIG;
-            case "GET_TASK_PUSH_NOTIFICATION_CONFIG" -> GatewayCommand.Operation.GET_TASK_PUSH_NOTIFICATION_CONFIG;
-            case "LIST_TASK_PUSH_NOTIFICATION_CONFIGS" ->
+            case "GET_TASK_PUSH_NOTIFICATION_CONFIG", "GetTaskPushNotificationConfig" ->
+                GatewayCommand.Operation.GET_TASK_PUSH_NOTIFICATION_CONFIG;
+            case "LIST_TASK_PUSH_NOTIFICATION_CONFIGS", "ListTaskPushNotificationConfigs" ->
                     GatewayCommand.Operation.LIST_TASK_PUSH_NOTIFICATION_CONFIGS;
-            case "DELETE_TASK_PUSH_NOTIFICATION_CONFIG" ->
+            case "DELETE_TASK_PUSH_NOTIFICATION_CONFIG", "DeleteTaskPushNotificationConfig" ->
                     GatewayCommand.Operation.DELETE_TASK_PUSH_NOTIFICATION_CONFIG;
-            case "GET_EXTENDED_AGENT_CARD" -> GatewayCommand.Operation.GET_EXTENDED_AGENT_CARD;
+            case "GET_EXTENDED_AGENT_CARD", "GetExtendedAgentCard", "extendedAgentCard" ->
+                GatewayCommand.Operation.GET_EXTENDED_AGENT_CARD;
             default -> throw new IllegalArgumentException("unsupported HTTP+JSON operation: " + value);
         };
+    }
+
+    private String taskId(GatewayCommand command) {
+        String taskId = textValue(command.metadata().get("upstreamTaskId"));
+        if (taskId == null) {
+            taskId = textValue(command.gatewayTaskId());
+        }
+        if (taskId == null) {
+            taskId = textValue(command.message().get("taskId"));
+        }
+        if (taskId == null) {
+            taskId = textValue(command.message().get("id"));
+        }
+        if (taskId == null) {
+            throw new IllegalArgumentException("HTTP+JSON " + command.operation() + " requires a task id");
+        }
+        return taskId;
+    }
+
+    private String configId(GatewayCommand command) {
+        String configId = textValue(command.metadata().get("upstreamConfigId"));
+        if (configId == null) {
+            configId = textValue(command.metadata().get("configId"));
+        }
+        if (configId == null) {
+            configId = textValue(command.message().get("configId"));
+        }
+        if (configId == null) {
+            configId = textValue(command.message().get("id"));
+        }
+        if (configId == null) {
+            throw new IllegalArgumentException("HTTP+JSON " + command.operation()
+                    + " requires a push notification config id");
+        }
+        return configId;
+    }
+
+    private Map<String, Object> bodyFields(Map<String, Object> fields, Set<String> excluded) {
+        Map<String, Object> body = new LinkedHashMap<>(fields);
+        excluded.forEach(body::remove);
+        return body;
+    }
+
+    private Map<String, Object> queryFields(Map<String, Object> fields, Set<String> excluded) {
+        return bodyFields(fields, excluded);
+    }
+
+    private String endpoint(String endpointUrl, String path, Map<String, Object> query) {
+        URI base = URI.create(endpointUrl);
+        if (base.getFragment() != null) {
+            throw new IllegalArgumentException("HTTP+JSON endpoint must not contain a URI fragment");
+        }
+        int queryIndex = endpointUrl.indexOf('?');
+        String baseWithoutQuery = queryIndex < 0 ? endpointUrl : endpointUrl.substring(0, queryIndex);
+        while (baseWithoutQuery.endsWith("/") && baseWithoutQuery.length() > base.getScheme().length() + 3) {
+            baseWithoutQuery = baseWithoutQuery.substring(0, baseWithoutQuery.length() - 1);
+        }
+        StringBuilder result = new StringBuilder(baseWithoutQuery).append('/').append(path);
+        String existingQuery = base.getRawQuery();
+        String encodedQuery = encodeQuery(query);
+        if (existingQuery != null && !existingQuery.isBlank()) {
+            result.append('?').append(existingQuery);
+            if (!encodedQuery.isBlank()) {
+                result.append('&').append(encodedQuery);
+            }
+        }
+        else if (!encodedQuery.isBlank()) {
+            result.append('?').append(encodedQuery);
+        }
+        return result.toString();
+    }
+
+    private String encodeQuery(Map<String, Object> query) {
+        StringBuilder encoded = new StringBuilder();
+        query.forEach((name, value) -> appendQueryValue(encoded, name, value));
+        return encoded.toString();
+    }
+
+    private void appendQueryValue(StringBuilder encoded, String name, Object value) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Iterable<?> iterable) {
+            iterable.forEach(item -> appendQueryValue(encoded, name, item));
+            return;
+        }
+        if (value.getClass().isArray()) {
+            for (int i = 0; i < Array.getLength(value); i++) {
+                appendQueryValue(encoded, name, Array.get(value, i));
+            }
+            return;
+        }
+        if (encoded.length() > 0) {
+            encoded.append('&');
+        }
+        encoded.append(urlEncode(name)).append('=').append(urlEncode(String.valueOf(value)));
+    }
+
+    private String pathSegment(String value) {
+        return urlEncode(value);
+    }
+
+    private String urlEncode(String value) {
+        return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private String textValue(Object value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.toString();
+        return text.isBlank() ? null : text;
     }
 
     private JsonRpcTaskReference extractTaskReference(JsonNode body) {
@@ -308,8 +477,7 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
         JsonNode task = node != null && node.has("task") ? node.get("task") : node;
         String taskId = text(task, "id");
         String contextId = text(task, "contextId");
-        JsonNode update = node == null ? null : node.has("statusUpdate") ? node.get("statusUpdate")
-                : node.get("artifactUpdate");
+        JsonNode update = streamingUpdate(node);
         if (taskId == null) {
             taskId = text(update, "taskId");
         }
@@ -321,19 +489,40 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
 
     private GatewayEvent.Type eventType(JsonNode body, boolean terminal, String taskId) {
         JsonNode node = toHttpNode(body);
-        if (node != null && (node.has("artifactUpdate") || node.has("artifact"))) {
+        JsonNode update = streamingUpdate(node);
+        if (isArtifactUpdate(node, update)) {
             return GatewayEvent.Type.TASK_ARTIFACT;
         }
-        if (node != null && node.has("statusUpdate")) {
-            JsonNode statusUpdate = node.get("statusUpdate");
-            if ((statusUpdate.has("final") && statusUpdate.get("final").asBoolean())
-                    || isTerminalStatus(statusUpdate.get("status"))) {
+        if (isStatusUpdate(node, update)) {
+            if (isTerminalStatus(update.get("status"))) {
                 return GatewayEvent.Type.TASK_COMPLETED;
             }
             return GatewayEvent.Type.TASK_STATUS;
         }
         return terminal || taskId == null ? (taskId == null ? GatewayEvent.Type.TASK_STATUS
                 : GatewayEvent.Type.TASK_COMPLETED) : GatewayEvent.Type.TASK_STATUS;
+    }
+
+    /** Returns the event payload from an A2A 1.0 stream wrapper. */
+    private JsonNode streamingUpdate(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return null;
+        }
+        if (node.has("statusUpdate")) {
+            return node.get("statusUpdate");
+        }
+        if (node.has("artifactUpdate")) {
+            return node.get("artifactUpdate");
+        }
+        return null;
+    }
+
+    private boolean isArtifactUpdate(JsonNode node, JsonNode update) {
+        return node != null && node.has("artifactUpdate");
+    }
+
+    private boolean isStatusUpdate(JsonNode node, JsonNode update) {
+        return node != null && node.has("statusUpdate");
     }
 
     private boolean isMessageOperation(GatewayCommand.Operation operation) {
