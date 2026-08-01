@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-get-1",
+  "method": "GetTask",
+  "params": {
+    "id": "gateway-task-1"
+  }
+}

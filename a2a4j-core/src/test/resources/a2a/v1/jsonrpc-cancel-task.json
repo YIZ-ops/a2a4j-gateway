@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-cancel-1",
+  "method": "CancelTask",
+  "params": {
+    "id": "gateway-task-1"
+  }
+}

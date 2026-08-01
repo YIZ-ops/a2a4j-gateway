@@ -1,0 +1,23 @@
+server:
+  port: 8092
+
+spring:
+  application:
+    name: a2a-server-echo-b
+
+a2a:
+  server:
+    id: echo-b
+    name: Echo Agent B
+    description: A2A4J demo Agent for concise task summaries
+    url: http://localhost:${server.port}/a2a/server
+    protocol-bindings: [JSONRPC]
+    defaultInputModes: [text/plain]
+    defaultOutputModes: [text/plain]
+    skills:
+      - name: task-summary
+        description: Produces a concise summary of the completed task
+        tags: [summary, report]
+        examples: [Summarize the task execution]
+        inputModes: [text/plain]
+        outputModes: [text/plain]

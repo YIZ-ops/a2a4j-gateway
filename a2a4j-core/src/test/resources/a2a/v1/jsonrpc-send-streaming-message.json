@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-stream-1",
+  "method": "SendStreamingMessage",
+  "params": {
+    "message": {
+      "messageId": "message-stream-1",
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "text": "Stream this response",
+          "mediaType": "text/plain"
+        }
+      ]
+    }
+  }
+}

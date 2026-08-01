@@ -1,0 +1,8 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-subscribe-1",
+  "method": "SubscribeToTask",
+  "params": {
+    "id": "gateway-task-1"
+  }
+}

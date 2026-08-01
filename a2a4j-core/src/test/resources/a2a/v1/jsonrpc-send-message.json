@@ -1,0 +1,17 @@
+{
+  "jsonrpc": "2.0",
+  "id": "request-send-1",
+  "method": "SendMessage",
+  "params": {
+    "message": {
+      "messageId": "message-1",
+      "role": "ROLE_USER",
+      "parts": [
+        {
+          "text": "Hello from the A2A 1.0 contract test",
+          "mediaType": "text/plain"
+        }
+      ]
+    }
+  }
+}

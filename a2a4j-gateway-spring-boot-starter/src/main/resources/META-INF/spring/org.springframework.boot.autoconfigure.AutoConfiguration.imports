@@ -1,0 +1,2 @@
+io.github.a2ap.gateway.spring.GatewayAutoConfiguration
+io.github.a2ap.gateway.spring.GatewaySecurityAutoConfiguration

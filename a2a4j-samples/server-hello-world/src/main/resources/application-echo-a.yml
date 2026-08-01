@@ -1,0 +1,29 @@
+server:
+  port: 8091
+
+spring:
+  application:
+    name: a2a-server-echo-a
+
+a2a:
+  server:
+    id: echo-a
+    name: Echo Agent A
+    description: A2A4J demo Agent for greeting and Java code generation
+    url: http://localhost:${server.port}/a2a/server
+    protocol-bindings: [JSONRPC]
+    defaultInputModes: [text/plain]
+    defaultOutputModes: [text/plain]
+    skills:
+      - name: hello-world
+        description: A simple hello world skill
+        tags: [greeting, basic]
+        examples: [Say hello to me, Greet me]
+        inputModes: [text/plain]
+        outputModes: [text/plain]
+      - name: code-generation
+        description: Generates a small Java code example from the request
+        tags: [code, java]
+        examples: [Generate a Java service example]
+        inputModes: [text/plain]
+        outputModes: [text/plain]

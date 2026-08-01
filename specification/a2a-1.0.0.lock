@@ -1,0 +1,6 @@
+A2A specification release: 1.0.0
+A2A Proto source: https://raw.githubusercontent.com/a2aproject/A2A/v1.0.0/specification/a2a.proto
+A2A Proto source SHA-256 (raw release bytes): 4B74C0BAA923AE0ACB55474E548F1D6E5D3F83B80D757B65F8BF3E99A3C2257F
+Checked-in specification/a2a.proto SHA-256 (LF-normalized): 1A8915C1B9FBA11A27E8138469658FEDE0838D6B1BBEB3D40EC659DFABE7426E
+Checked-in specification/specification.md SHA-256 (LF-normalized): 84CBE98276DCBC566320EDB8497DCACA13FB009843EA5CE424979A55008ADF29
+Protocol baseline: A2A 1.0 JSON-RPC and HTTP+JSON; gRPC is a later Gateway binding.

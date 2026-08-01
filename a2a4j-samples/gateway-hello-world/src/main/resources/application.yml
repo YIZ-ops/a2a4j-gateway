@@ -1,0 +1,48 @@
+spring:
+  application:
+    name: a2a4j-gateway-sample
+
+server:
+  port: 8099
+
+management:
+  endpoints.web.exposure.include: health,info,prometheus
+  endpoint.health.probes.enabled: true
+  endpoint.health.show-details: always
+
+# This application is the Gateway only. The two demo Agents are separate
+# server-hello-world processes configured with the echo-a and echo-b profiles.
+a2a:
+  gateway:
+    enabled: true
+    allow-http: true
+    allow-private-network: true
+    refresh-interval: 30s
+    default-agent-by-tenant:
+      demo: echo-a
+    agents:
+      - tenant-id: demo
+        agent-id: echo-a
+        display-name: Echo Agent A
+        instances:
+          - instance-id: echo-a-1
+            card-url: http://localhost:8091/.well-known/agent.json
+      - tenant-id: demo
+        agent-id: echo-b
+        display-name: Echo Agent B
+        instances:
+          - instance-id: echo-b-1
+            card-url: http://localhost:8092/.well-known/agent.json
+    security:
+      enabled: true
+      mode: api-key
+      api-key:
+        enabled: true
+        header-name: X-A2A-API-Key
+        entries:
+          - key-id: local-demo
+            secret-env: A2A_SAMPLE_API_KEY
+            tenant-id: demo
+            subject: local-user
+            authorities:
+              - '*'
