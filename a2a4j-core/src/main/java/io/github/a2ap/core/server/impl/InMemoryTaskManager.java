@@ -6,52 +6,38 @@
  * You may obtain a copy of the License at
  *
  *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 
 package io.github.a2ap.core.server.impl;
 
-import io.github.a2ap.core.model.Artifact;
-import io.github.a2ap.core.model.Message;
-import io.github.a2ap.core.model.Part;
-import io.github.a2ap.core.model.Task;
-import io.github.a2ap.core.model.RequestContext;
-import io.github.a2ap.core.model.TaskPushNotificationConfig;
-import io.github.a2ap.core.model.MessageSendParams;
-import io.github.a2ap.core.model.TaskState;
-import io.github.a2ap.core.model.TaskStatus;
-import io.github.a2ap.core.model.TaskStatusUpdateEvent;
-import io.github.a2ap.core.model.TaskUpdate;
-import io.github.a2ap.core.model.TaskArtifactUpdateEvent;
+import io.github.a2ap.core.server.RequestContext;
 import io.github.a2ap.core.server.TaskManager;
 import io.github.a2ap.core.server.TaskStore;
-
-import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.Part;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.UpdateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
-/**
- * In-memory implementation of the TaskManager interface.
- * This implementation stores all tasks in memory and is suitable for testing
- * and demonstration purposes.
- */
+/** In-memory task lifecycle implementation backed by official SDK domain records. */
 public class InMemoryTaskManager implements TaskManager {
 
     private static final Logger log = LoggerFactory.getLogger(InMemoryTaskManager.class);
@@ -66,65 +52,43 @@ public class InMemoryTaskManager implements TaskManager {
 
     @Override
     public RequestContext loadOrCreateContext(MessageSendParams params) {
-        String taskId = params.getMessage().getTaskId();
-        taskId = taskId == null ? UUID.randomUUID().toString() : taskId;
-        String contextId = params.getMessage().getContextId();
-        contextId = contextId == null ? UUID.randomUUID().toString() : contextId;
-        RequestContext.Builder contextBuilder = RequestContext.builder()
-                .taskId(taskId).contextId(contextId).request(params);
+        Message message = Objects.requireNonNull(params, "params").message();
+        String taskId = message.taskId() == null ? UUID.randomUUID().toString() : message.taskId();
+        String contextId = message.contextId() == null ? UUID.randomUUID().toString() : message.contextId();
         Task currentTask = taskStore.load(taskId);
         if (currentTask == null) {
-            // create the new one take
             currentTask = Task.builder()
                     .id(taskId)
                     .contextId(contextId)
-                    .status(TaskStatus.builder()
-                            .state(TaskState.SUBMITTED)
-                            .timestamp(String.valueOf(Instant.now().toEpochMilli()))
-                            .build())
-                    .metadata(params.getMetadata())
-                    .artifacts(new LinkedList<>())
-                    .history(new LinkedList<>())
+                    .status(new TaskStatus(TaskState.TASK_STATE_SUBMITTED, null, OffsetDateTime.now()))
+                    .metadata(params.metadata())
+                    .artifacts(new ArrayList<>())
+                    .history(new ArrayList<>())
                     .build();
-            log.info("Create new message task: {}", currentTask);
-        } else {
-            TaskState taskState = currentTask.getStatus().getState();
-            if (taskState == TaskState.COMPLETED || taskState == TaskState.FAILED || taskState == TaskState.CANCELED
-                    || taskState == TaskState.REJECTED) {
-                log.warn(
-                        "Received message for task {} already in final state {}. Handling as new submission (keeping history)",
-                        taskId, taskState);
-                TaskStatus taskStatusUpdate = TaskStatus.builder()
-                        .state(TaskState.SUBMITTED)
-                        .timestamp(String.valueOf(Instant.now().toEpochMilli()))
-                        .build();
-                applyTaskUpdate(currentTask, taskStatusUpdate).block();
-            } else if (taskState == TaskState.INPUT_REQUIRED || taskState == TaskState.AUTH_REQUIRED) {
-                log.info("Received message while {}, changing task {} state to 'working'", taskState, taskId);
-                TaskStatus taskStatusUpdate = TaskStatus.builder()
-                        .state(TaskState.WORKING)
-                        .timestamp(String.valueOf(Instant.now().toEpochMilli()))
-                        .build();
-                applyTaskUpdate(currentTask, taskStatusUpdate).block();
-            } else if (taskState == TaskState.WORKING) {
-                log.info("Received message while task {} already 'working'. Proceeding.", taskId);
-            } else {
-                log.info("receiving task {} another message might be odd, but proceed.", taskId);
-            }
+            taskStore.save(currentTask);
+            log.info("Created new message task: {}", currentTask.id());
         }
-        contextBuilder.task(currentTask);
-        Set<String> relatedTaskIds = contextTaskIdMap.computeIfAbsent(contextId, k -> new HashSet<>());
-        relatedTaskIds.add(taskId);
-        final String currentTaskId = taskId;
-        List<Task> relatedTasksList = relatedTaskIds.stream().map(id -> {
-            if (Objects.equals(id, currentTaskId)) {
-                return null;
-            } else {
-                return taskStore.load(id);
-            }
-        }).filter(Objects::nonNull).toList();
-        contextBuilder.relatedTasks(relatedTasksList);
-        return contextBuilder.build();
+        else if (isFinal(currentTask.status().state())
+                || currentTask.status().state() == TaskState.TASK_STATE_INPUT_REQUIRED
+                || currentTask.status().state() == TaskState.TASK_STATE_AUTH_REQUIRED) {
+            TaskState next = isFinal(currentTask.status().state())
+                    ? TaskState.TASK_STATE_SUBMITTED : TaskState.TASK_STATE_WORKING;
+            currentTask = withStatus(currentTask, new TaskStatus(next, null, OffsetDateTime.now()));
+            taskStore.save(currentTask);
+        }
+        contextTaskIdMap.computeIfAbsent(contextId, ignored -> new HashSet<>()).add(taskId);
+        List<Task> relatedTasks = contextTaskIdMap.get(contextId).stream()
+                .filter(id -> !Objects.equals(id, taskId))
+                .map(taskStore::load)
+                .filter(Objects::nonNull)
+                .toList();
+        return RequestContext.builder()
+                .taskId(taskId)
+                .contextId(contextId)
+                .request(params)
+                .task(currentTask)
+                .relatedTasks(relatedTasks)
+                .build();
     }
 
     @Override
@@ -133,162 +97,92 @@ public class InMemoryTaskManager implements TaskManager {
     }
 
     @Override
-    public Mono<Task> applyTaskUpdate(Task task, List<TaskUpdate> taskUpdates) {
-        if (taskUpdates == null || taskUpdates.isEmpty()) {
-            return Mono.just(task);
-        }
-        for (TaskUpdate taskUpdate : taskUpdates) {
-            if (taskUpdate instanceof TaskStatus taskStatus) {
-                log.info("apply task {} updated with status {}", task.getId(), taskStatus);
-                taskStatus.setTimestamp(String.valueOf(Instant.now().toEpochMilli()));
-                task.setStatus(taskStatus);
-                // If the update includes an agent message, add it to history
-                if (taskStatus.getMessage() != null && Objects.equals(taskStatus.getMessage().getRole(), "agent")) {
-                    List<Message> history = task.getHistory() == null ? new LinkedList<>() : task.getHistory();
-                    history.add(taskStatus.getMessage());
-                    task.setHistory(history);
-                }
-            } else if (taskUpdate instanceof Artifact artifact) {
-                log.info("apply task {} updated with artifact {}", task.getId(), artifact);
-                List<Artifact> artifacts = task.getArtifacts();
-
-                // Initialize artifacts list if it doesn't exist
-                if (artifacts == null) {
-                    artifacts = new LinkedList<>();
-                    task.setArtifacts(artifacts);
-                }
-
-                String artifactId = artifact.getArtifactId();
-
-                // Find existing artifact with the same ID
-                int existingArtifactIndex = -1;
-                for (int i = 0; i < artifacts.size(); i++) {
-                    Artifact art = artifacts.get(i);
-                    if (art.getArtifactId() != null && art.getArtifactId().equals(artifactId)) {
-                        existingArtifactIndex = i;
-                        break;
-                    }
-                }
-
-                // Since we don't have append information from the raw Artifact,
-                // we default to replacing/adding the artifact
-                if (existingArtifactIndex != -1) {
-                    // Replace the existing artifact entirely with the new data
-                    log.debug("Replacing artifact at id {} for task {}", artifactId, task.getId());
-                    artifacts.set(existingArtifactIndex, artifact);
-                } else {
-                    // Add the new artifact since no artifact with this ID exists yet
-                    log.debug("Adding new artifact with id {} for task {}", artifactId, task.getId());
-                    artifacts.add(artifact);
-                }
-            } else {
-                log.error("Received taskUpdate {} but not a TaskUpdate {}", taskUpdate, taskUpdate.getClass());
+    public Mono<Task> applyTaskUpdate(Task task, List<UpdateEvent> taskUpdates) {
+        Task current = task;
+        if (taskUpdates != null) {
+            for (UpdateEvent update : taskUpdates) {
+                current = applyUpdate(current, update);
             }
         }
-        taskStore.save(task);
-        return Mono.just(task);
+        taskStore.save(current);
+        return Mono.just(current);
     }
 
     @Override
-    public Mono<Task> applyTaskUpdate(Task task, TaskUpdate update) {
-        return applyTaskUpdate(task, Stream.of(update).collect(Collectors.toList()));
+    public Mono<Task> applyTaskUpdate(Task task, UpdateEvent update) {
+        return applyTaskUpdate(task, update == null ? List.of() : List.of(update));
     }
 
     @Override
     public Mono<Task> applyStatusUpdate(Task task, TaskStatusUpdateEvent event) {
-        log.info("apply task {} updated with status event {}", task.getId(), event);
-
-        TaskStatus taskStatus = event.getStatus();
-        if (taskStatus != null) {
-            log.info("apply task {} updated with status {}", task.getId(), taskStatus);
-            taskStatus.setTimestamp(String.valueOf(Instant.now().toEpochMilli()));
-            task.setStatus(taskStatus);
-
-            // If the update includes an agent message, add it to history
-            if (taskStatus.getMessage() != null && Objects.equals(taskStatus.getMessage().getRole(), "agent")) {
-                List<Message> history = task.getHistory() == null ? new LinkedList<>() : task.getHistory();
-                history.add(taskStatus.getMessage());
-                task.setHistory(history);
-            }
-        } else {
-            log.warn("Received TaskStatusUpdateEvent for task {} but status is null", task.getId());
-        }
-
-        taskStore.save(task);
-        return Mono.just(task);
+        return applyTaskUpdate(task, event);
     }
 
-    /**
-     * Apply artifact update with append support from TaskArtifactUpdateEvent
-     *
-     * @param task  The task to update
-     * @param event The TaskArtifactUpdateEvent containing artifact and append information
-     * @return Updated task
-     */
+    @Override
     public Mono<Task> applyArtifactUpdate(Task task, TaskArtifactUpdateEvent event) {
-        log.info("apply task {} updated with artifact event {}", task.getId(), event);
-
-        List<Artifact> artifacts = task.getArtifacts();
-
-        // Initialize artifacts list if it doesn't exist
-        if (artifacts == null) {
-            artifacts = new LinkedList<>();
-            task.setArtifacts(artifacts);
-        }
-
-        Artifact newArtifactData = event.getArtifact();
-        String artifactId = newArtifactData.getArtifactId();
-        boolean appendParts = event.getAppend() != null ? event.getAppend() : false;
-
-        // Find existing artifact with the same ID
-        Artifact existingArtifact = null;
-        int existingArtifactIndex = -1;
-        for (int i = 0; i < artifacts.size(); i++) {
-            Artifact art = artifacts.get(i);
-            if (art.getArtifactId() != null && art.getArtifactId().equals(artifactId)) {
-                existingArtifact = art;
-                existingArtifactIndex = i;
-                break;
-            }
-        }
-
-        if (!appendParts) {
-            // This represents the first chunk for this artifact ID.
-            if (existingArtifactIndex != -1) {
-                // Replace the existing artifact entirely with the new data
-                log.debug("Replacing artifact at id {} for task {}", artifactId, task.getId());
-                artifacts.set(existingArtifactIndex, newArtifactData);
-            } else {
-                // Add the new artifact since no artifact with this ID exists yet
-                log.debug("Adding new artifact with id {} for task {}", artifactId, task.getId());
-                artifacts.add(newArtifactData);
-            }
-        } else if (existingArtifact != null) {
-            // Append new parts to the existing artifact's part list
-            log.debug("Appending parts to artifact id {} for task {}", artifactId, task.getId());
-            if (existingArtifact.getParts() != null && newArtifactData.getParts() != null) {
-                List<Part> parts = new LinkedList<>(existingArtifact.getParts());
-                parts.addAll(newArtifactData.getParts());
-                existingArtifact.setParts(parts);
-            }
-        } else {
-            // We received a chunk to append, but we don't have an existing artifact.
-            // we will ignore this chunk
-            log.warn("Received append=true for nonexistent artifact id {} in task {}. Ignoring chunk.",
-                    artifactId, task.getId());
-        }
-
-        taskStore.save(task);
-        return Mono.just(task);
+        return applyTaskUpdate(task, event);
     }
 
     @Override
     public void registerTaskNotification(TaskPushNotificationConfig config) {
-        notificationConfigMap.put(config.getTaskId(), config);
+        notificationConfigMap.put(config.taskId(), config);
     }
 
     @Override
     public TaskPushNotificationConfig getTaskNotification(String taskId) {
         return notificationConfigMap.get(taskId);
     }
+
+    private Task applyUpdate(Task task, UpdateEvent update) {
+        if (update instanceof TaskStatusUpdateEvent statusUpdate) {
+            return withStatus(task, statusUpdate.status());
+        }
+        if (update instanceof TaskArtifactUpdateEvent artifactUpdate) {
+            Artifact incoming = artifactUpdate.artifact();
+            List<Artifact> artifacts = new ArrayList<>(nullToEmpty(task.artifacts()));
+            int existingIndex = indexOf(artifacts, incoming.artifactId());
+            if (Boolean.TRUE.equals(artifactUpdate.append()) && existingIndex >= 0) {
+                Artifact existing = artifacts.get(existingIndex);
+                List<Part<?>> parts = new ArrayList<>(nullToEmpty(existing.parts()));
+                parts.addAll(nullToEmpty(incoming.parts()));
+                artifacts.set(existingIndex, Artifact.builder(existing).parts(parts).build());
+            }
+            else if (existingIndex >= 0) {
+                artifacts.set(existingIndex, incoming);
+            }
+            else {
+                artifacts.add(incoming);
+            }
+            return Task.builder(task).artifacts(artifacts).build();
+        }
+        throw new IllegalArgumentException("unsupported SDK task update: " + update);
+    }
+
+    private Task withStatus(Task task, TaskStatus status) {
+        TaskStatus timestamped = new TaskStatus(status.state(), status.message(), OffsetDateTime.now());
+        List<Message> history = new ArrayList<>(nullToEmpty(task.history()));
+        if (status.message() != null && status.message().role() == Message.Role.ROLE_AGENT) {
+            history.add(status.message());
+        }
+        return Task.builder(task).status(timestamped).history(history).build();
+    }
+
+    private static int indexOf(List<Artifact> artifacts, String artifactId) {
+        for (int index = 0; index < artifacts.size(); index++) {
+            if (Objects.equals(artifactId, artifacts.get(index).artifactId())) {
+                return index;
+            }
+        }
+        return -1;
+    }
+
+    private static boolean isFinal(TaskState state) {
+        return state == TaskState.TASK_STATE_COMPLETED || state == TaskState.TASK_STATE_FAILED
+                || state == TaskState.TASK_STATE_CANCELED || state == TaskState.TASK_STATE_REJECTED;
+    }
+
+    private static <T> List<T> nullToEmpty(List<T> values) {
+        return values == null ? List.of() : values;
+    }
+
 }

@@ -37,6 +37,16 @@
     </scm>
 
     <dependencies>
+        <!-- Official A2A 1.0 domain model and the SDK JSON-RPC codec. -->
+        <dependency>
+            <groupId>org.a2aproject.sdk</groupId>
+            <artifactId>a2a-java-sdk-spec</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.a2aproject.sdk</groupId>
+            <artifactId>a2a-java-sdk-jsonrpc-common</artifactId>
+        </dependency>
+
         <!-- Reactor -->
         <dependency>
             <groupId>io.projectreactor</groupId>

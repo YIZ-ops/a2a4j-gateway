@@ -16,7 +16,7 @@
 
 package io.github.a2ap.core.client;
 
-import io.github.a2ap.core.model.AgentCard;
+import org.a2aproject.sdk.spec.AgentCard;
 
 /**
  * Interface for resolving and discovering AgentCard information in the A2A protocol ecosystem.

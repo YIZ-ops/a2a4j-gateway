@@ -16,25 +16,25 @@
 
 package io.github.a2ap.server.hello.world.agent;
 
-import io.github.a2ap.core.model.Artifact;
-import io.github.a2ap.core.model.Message;
-import io.github.a2ap.core.model.RequestContext;
-import io.github.a2ap.core.model.TaskArtifactUpdateEvent;
-import io.github.a2ap.core.model.TaskState;
-import io.github.a2ap.core.model.TaskStatus;
-import io.github.a2ap.core.model.TaskStatusUpdateEvent;
-import io.github.a2ap.core.model.TextPart;
 import io.github.a2ap.core.server.AgentExecutor;
 import io.github.a2ap.core.server.EventQueue;
+import io.github.a2ap.core.server.RequestContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
-import java.time.Instant;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import org.a2aproject.sdk.spec.Artifact;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskState;
+import org.a2aproject.sdk.spec.TaskStatus;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * Demo implementation of {@link AgentExecutor} that simulates realistic agent behavior.
@@ -70,8 +70,8 @@ import java.util.Map;
  * artifact types.
  *
  * @see io.github.a2ap.core.server.AgentExecutor
- * @see io.github.a2ap.core.model.TaskArtifactUpdateEvent
- * @see io.github.a2ap.core.model.TaskStatusUpdateEvent
+ * @see org.a2aproject.sdk.spec.TaskArtifactUpdateEvent
+ * @see org.a2aproject.sdk.spec.TaskStatusUpdateEvent
  */
 @Component
 public class DemoAgentExecutor implements AgentExecutor {
@@ -117,8 +117,8 @@ public class DemoAgentExecutor implements AgentExecutor {
      */
     @Override
     public Mono<Void> execute(RequestContext context, EventQueue eventQueue) {
-        String taskId = context.getTask().getId();
-        String contextId = context.getTask().getContextId();
+        String taskId = context.getTask().id();
+        String contextId = context.getTask().contextId();
         log.info("Demo agent starting execution for task: {}", taskId);
 
         return Mono.fromRunnable(() -> {
@@ -209,11 +209,8 @@ public class DemoAgentExecutor implements AgentExecutor {
         TaskStatusUpdateEvent workingEvent = TaskStatusUpdateEvent.builder()
                 .taskId(taskId)
                 .contextId(contextId)
-                .status(TaskStatus.builder()
-                        .state(TaskState.WORKING)
-                        .timestamp(String.valueOf(Instant.now().toEpochMilli()))
-                        .message(createAgentMessage(statusMessage))
-                        .build())
+                .status(new TaskStatus(TaskState.TASK_STATE_WORKING, createAgentMessage(statusMessage),
+                        OffsetDateTime.now()))
                 .build();
 
         eventQueue.enqueueEvent(workingEvent);
@@ -253,7 +250,7 @@ public class DemoAgentExecutor implements AgentExecutor {
                 .artifactId(artifactId)
                 .name(name)
                 .description("AI generated text reply")
-                .parts(List.of(TextPart.builder().text(content).build()))
+                .parts(List.of(new TextPart(content)))
                 .metadata(
                         Map.of("contentType", "text/plain", "encoding", "utf-8", "chunkIndex", System.currentTimeMillis()))
                 .build();
@@ -315,7 +312,7 @@ public class DemoAgentExecutor implements AgentExecutor {
                 .artifactId("code-example")
                 .name("Example Code")
                 .description("Example Java code generated based on requirements")
-                .parts(List.of(TextPart.builder().text(codeContent).build()))
+                .parts(List.of(new TextPart(codeContent)))
                 .metadata(
                         Map.of("contentType", "text/x-java-source", "language", "java", "filename", "ExampleService.java"))
                 .build();
@@ -359,12 +356,12 @@ public class DemoAgentExecutor implements AgentExecutor {
                 .artifactId("task-summary")
                 .name("Task Summary")
                 .description("Summary report of this task execution")
-                .parts(List.of(TextPart.builder()
-                        .text("## Task Execution Summary\n\n" + "✅ User request analysis completed\n"
-                                + "✅ Text response generated\n" + "✅ Example code provided\n"
-                                + "✅ Task executed successfully\n\n" + "Total execution time: ~3 seconds\n"
+                .parts(List.of(new TextPart(
+                        "## Task Execution Summary\n\n" + "User request analysis completed\n"
+                                + "Text response generated\n" + "Example code provided\n"
+                                + "Task executed successfully\n\n" + "Total execution time: ~3 seconds\n"
                                 + "Generated content: Text response + Code example")
-                        .build()))
+                        ))
                 .metadata(Map.of("contentType", "text/markdown", "reportType", "summary"))
                 .build();
 
@@ -406,12 +403,9 @@ public class DemoAgentExecutor implements AgentExecutor {
         TaskStatusUpdateEvent completedEvent = TaskStatusUpdateEvent.builder()
                 .taskId(taskId)
                 .contextId(contextId)
-                .status(TaskStatus.builder()
-                        .state(TaskState.COMPLETED)
-                        .timestamp(String.valueOf(Instant.now().toEpochMilli()))
-                        .message(createAgentMessage(
-                                "Task completed successfully! I have generated a detailed response and example code for you."))
-                        .build())
+                .status(new TaskStatus(TaskState.TASK_STATE_COMPLETED, createAgentMessage(
+                        "Task completed successfully! I have generated a detailed response and example code for you."),
+                        OffsetDateTime.now()))
                 .metadata(Map.of("executionTime", "3000ms", "artifactsGenerated", 4, "success", true))
                 .build();
 
@@ -433,8 +427,8 @@ public class DemoAgentExecutor implements AgentExecutor {
     private Message createAgentMessage(String content) {
         return Message.builder()
                 .messageId(java.util.UUID.randomUUID().toString())
-                .role("agent")
-                .parts(List.of(TextPart.builder().text(content).build()))
+                .role(Message.Role.ROLE_AGENT)
+                .parts(List.of(new TextPart(content)))
                 .build();
     }
 

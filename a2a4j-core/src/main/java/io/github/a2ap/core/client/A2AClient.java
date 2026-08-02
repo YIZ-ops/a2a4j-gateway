@@ -16,15 +16,15 @@
 
 package io.github.a2ap.core.client;
 
-import io.github.a2ap.core.exception.A2AError;
-import io.github.a2ap.core.model.AgentCard;
-import io.github.a2ap.core.model.SendMessageResponse;
-import io.github.a2ap.core.model.SendStreamingMessageResponse;
-import io.github.a2ap.core.model.Task;
-import io.github.a2ap.core.model.TaskIdParams;
-import io.github.a2ap.core.model.TaskPushNotificationConfig;
-import io.github.a2ap.core.model.TaskQueryParams;
-import io.github.a2ap.core.model.MessageSendParams;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.Event;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskIdParams;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
+import org.a2aproject.sdk.spec.TaskQueryParams;
 import reactor.core.publisher.Flux;
 
 /**
@@ -54,7 +54,7 @@ public interface A2AClient {
      * @param params The parameters for the SendMessage method.
      * @return created Task object or null.
      */
-    SendMessageResponse sendMessage(MessageSendParams params) throws A2AError;
+    Event sendMessage(MessageSendParams params) throws A2AError;
 
     /**
      * Sends a task request and subscribes to streaming updates. Returns a Flux that emits
@@ -63,7 +63,7 @@ public interface A2AClient {
      * @param params The parameters for the SendStreamingMessage method.
      * @return A Flux of task update events.
      */
-    Flux<SendStreamingMessageResponse> sendMessageStream(MessageSendParams params);
+    Flux<StreamingEventKind> sendMessageStream(MessageSendParams params);
 
     /**
      * Retrieves the current state of a task.
@@ -105,7 +105,7 @@ public interface A2AClient {
      * @param params The parameters for the SubscribeToTask method.
      * @return A Flux of task update events.
      */
-    Flux<SendStreamingMessageResponse> resubscribeTask(TaskQueryParams params);
+    Flux<StreamingEventKind> resubscribeTask(TaskQueryParams params);
 
     /**
      * Optional: Checks if the server likely supports optional methods based on agent

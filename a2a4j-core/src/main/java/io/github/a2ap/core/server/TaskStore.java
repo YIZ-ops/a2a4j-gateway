@@ -16,7 +16,7 @@
 
 package io.github.a2ap.core.server;
 
-import io.github.a2ap.core.model.Task;
+import org.a2aproject.sdk.spec.Task;
 
 /**
  * Simplified interface for task storage providers. Stores and retrieves both the task and

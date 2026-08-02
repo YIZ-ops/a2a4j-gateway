@@ -66,7 +66,8 @@ class HttpJsonProtocolAdapterTest {
     void encodesHttpJsonAndUnwrapsJsonRpcResponse() throws Exception {
         PrincipalContext principal = new PrincipalContext("tenant-a", "user-a", Set.of(), Map.of(), "fp-a");
         InboundExchange exchange = new InboundExchange(ProtocolDescriptor.httpJson(false),
-                "{\"message\":{\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"hello\"}]}}",
+                "{\"message\":{\"messageId\":\"m-2\",\"role\":\"ROLE_USER\","
+                        + "\"parts\":[{\"text\":\"hello\"}]}}",
                 Map.of(GatewayHeaders.GATEWAY_OPERATION, "SEND_MESSAGE", GatewayHeaders.TRACEPARENT,
                         "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"), "req-1", principal);
         GatewayCommand command = adapter.decode(exchange).block();

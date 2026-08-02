@@ -6,49 +6,35 @@
  * You may obtain a copy of the License at
  *
  *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 
 package io.github.a2ap.core.server.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.a2ap.core.jsonrpc.JSONRPCError;
-import io.github.a2ap.core.jsonrpc.JSONRPCRequest;
-import io.github.a2ap.core.jsonrpc.JSONRPCResponse;
-import io.github.a2ap.core.model.Message;
-import io.github.a2ap.core.model.MessageSendParams;
-import io.github.a2ap.core.model.SendMessageResponse;
-import io.github.a2ap.core.model.Task;
-import io.github.a2ap.core.model.TaskArtifactUpdateEvent;
-import io.github.a2ap.core.model.TaskIdParams;
-import io.github.a2ap.core.model.TaskPushNotificationConfig;
-import io.github.a2ap.core.model.TaskStatusUpdateEvent;
 import io.github.a2ap.core.server.A2AServer;
 import io.github.a2ap.core.server.Dispatcher;
+import io.github.a2ap.core.util.SdkModelCodec;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.Event;
+import org.a2aproject.sdk.spec.InternalError;
+import org.a2aproject.sdk.spec.InvalidParamsError;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.MethodNotFoundError;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskIdParams;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
+import org.a2aproject.sdk.spec.TaskQueryParams;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 
-/**
- * Default implementation of the Dispatcher interface.
- * This implementation routes JSON-RPC requests to the appropriate A2A server methods
- * and handles both synchronous and streaming operations.
- * <p>
- * Supported methods include:
- * - SendMessage: Send a message and create a task
- * - SendStreamingMessage: Send a message and subscribe to streaming updates
- * - GetTask: Retrieve task information
- * - CancelTask: Cancel a running task
- * - CreateTaskPushNotificationConfig: Set push notification configuration
- * - GetTaskPushNotificationConfig: Get push notification configuration
- * - SubscribeToTask: Resubscribe to task updates
- */
+/** JSON-RPC protocol adapter backed by the official SDK domain model. */
 public class DefaultDispatcher implements Dispatcher {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultDispatcher.class);
@@ -56,157 +42,156 @@ public class DefaultDispatcher implements Dispatcher {
     private final A2AServer a2aServer;
     private final ObjectMapper objectMapper;
 
-    /**
-     * Constructs a new DefaultDispatcher.
-     *
-     * @param a2aServer    The A2A server instance to delegate operations to
-     * @param objectMapper The Jackson ObjectMapper for parameter conversion
-     */
     public DefaultDispatcher(A2AServer a2aServer, ObjectMapper objectMapper) {
         this.a2aServer = a2aServer;
         this.objectMapper = objectMapper;
     }
 
-    /**
-     * {@inheritDoc}
-     * <p>
-     * This implementation supports the following methods:
-     * - SendMessage
-     * - GetTask
-     * - CancelTask
-     * - CreateTaskPushNotificationConfig
-     * - GetTaskPushNotificationConfig
-     */
     @Override
-    public JSONRPCResponse dispatch(JSONRPCRequest request) {
-        JSONRPCResponse response = new JSONRPCResponse();
-        response.setId(request.getId());
-        String method = request.getMethod();
-        Object params = request.getParams();
-
+    public Map<String, Object> dispatch(Map<String, Object> request) {
+        Object id = id(request);
         try {
-            switch (method) {
-                case "SendMessage" -> {
-                    MessageSendParams taskSendParams = objectMapper.convertValue(params, MessageSendParams.class);
-                    SendMessageResponse messageResponse = a2aServer.handleMessage(taskSendParams);
-                    response.setResult(sendMessageResponse(messageResponse));
-                }
-                case "GetTask" -> {
-                    TaskIdParams taskIdParamsGet = objectMapper.convertValue(params, TaskIdParams.class);
-                    Task task = a2aServer.getTask(taskIdParamsGet.getId());
-                    response.setResult(task);
-                }
-                case "CancelTask" -> {
-                    TaskIdParams taskIdParamsCancel = objectMapper.convertValue(params, TaskIdParams.class);
-                    Task cancelledTask = a2aServer.cancelTask(taskIdParamsCancel.getId());
-                    response.setResult(cancelledTask);
-                }
-                case "CreateTaskPushNotificationConfig" -> {
-                    TaskPushNotificationConfig configToSet = objectMapper.convertValue(params,
-                            TaskPushNotificationConfig.class);
-                    TaskPushNotificationConfig setResult = a2aServer.setTaskPushNotification(configToSet);
-                    response.setResult(setResult);
-                }
-                case "GetTaskPushNotificationConfig" -> {
-                    TaskIdParams taskIdParamsGetConfig = objectMapper.convertValue(params, TaskIdParams.class);
-                    TaskPushNotificationConfig getConfigResult = a2aServer
-                            .getTaskPushNotification(taskIdParamsGetConfig.getId());
-                    response.setResult(getConfigResult);
-                }
-                default -> {
-                    log.warn("Unsupported method: {}", method);
-                    response.setError(new JSONRPCError(JSONRPCError.METHOD_NOT_FOUND, "Method not found",
-                            "Method '" + method + "' not supported"));
-                }
-            }
-        } catch (IllegalArgumentException e) {
-            response.setError(new JSONRPCError(JSONRPCError.INVALID_PARAMS, "Invalid params", e.getMessage()));
-        } catch (Exception e) {
-            response.setError(new JSONRPCError(JSONRPCError.INTERNAL_ERROR, "Internal error", e.getMessage()));
-            log.error("Internal error processing method {}.", method, e);
+            String method = requiredText(request, "method");
+            Object result = switch (method) {
+                case "SendMessage" -> payload(a2aServer.handleMessage(
+                        decode(params(request), MessageSendParams.class)));
+                case "GetTask" -> a2aServer.getTask(
+                        decode(params(request), TaskQueryParams.class).id());
+                case "CancelTask" -> a2aServer.cancelTask(
+                        decode(params(request), TaskIdParams.class).id());
+                case "CreateTaskPushNotificationConfig" -> a2aServer.setTaskPushNotification(
+                        decode(params(request), TaskPushNotificationConfig.class));
+                case "GetTaskPushNotificationConfig" -> a2aServer.getTaskPushNotification(
+                        decode(params(request), TaskIdParams.class).id());
+                default -> throw new MethodNotFoundError(null, "Method not found",
+                        Map.of("method", method));
+            };
+            return success(id, result);
         }
-        return response;
+        catch (A2AError ex) {
+            return failure(id, ex);
+        }
+        catch (IllegalArgumentException ex) {
+            return failure(id, new InvalidParamsError(null, "Invalid parameters",
+                    Map.of("cause", message(ex))));
+        }
+        catch (Exception ex) {
+            log.error("Internal error processing JSON-RPC request", ex);
+            return failure(id, new InternalError("Internal error"));
+        }
     }
 
-    /**
-     * {@inheritDoc}
-     * <p>
-     * This implementation supports the following streaming methods:
-     * - SendStreamingMessage
-     * - SubscribeToTask
-     */
     @Override
-    public Flux<JSONRPCResponse> dispatchStream(JSONRPCRequest request) {
-        JSONRPCResponse errorResponse = newResponse(request);
-        String method = request.getMethod();
-        Object params = request.getParams();
-
+    public Flux<Map<String, Object>> dispatchStream(Map<String, Object> request) {
+        Object id = id(request);
         try {
-            switch (method) {
-                case "SendStreamingMessage" -> {
-                    MessageSendParams taskSendParams = objectMapper.convertValue(params, MessageSendParams.class);
-                    return a2aServer.handleMessageStream(taskSendParams).map(event -> {
-                        JSONRPCResponse response = newResponse(request);
-                        response.setResult(streamResponse(event));
-                        return response;
+            String method = requiredText(request, "method");
+            Flux<StreamingEventKind> events = switch (method) {
+                case "SendStreamingMessage" -> a2aServer.handleMessageStream(
+                        decode(params(request), MessageSendParams.class));
+                case "SubscribeToTask" -> a2aServer.subscribeToTaskUpdates(
+                        decode(params(request), TaskIdParams.class).id());
+                default -> throw new MethodNotFoundError(null, "Method not found",
+                        Map.of("method", method));
+            };
+            return events.map(event -> success(id, payload(event)))
+                    .onErrorResume(ex -> {
+                        log.error("Asynchronous error processing streaming JSON-RPC request", ex);
+                        return Flux.just(failure(id, protocolError(ex)));
                     });
-                }
-                case "SubscribeToTask" -> {
-                    TaskIdParams taskIdParamsGet = objectMapper.convertValue(params, TaskIdParams.class);
-                    return a2aServer.subscribeToTaskUpdates(taskIdParamsGet.getId())
-                            .map(event -> {
-                                JSONRPCResponse response = newResponse(request);
-                                response.setResult(streamResponse(event));
-                                return response;
-                            });
-                }
-                default -> {
-                    log.warn("Unsupported method: {}", method);
-                    errorResponse.setError(new JSONRPCError(JSONRPCError.METHOD_NOT_FOUND, "Method not found",
-                            "Method '" + method + "' not supported"));
-                }
-            }
-        } catch (IllegalArgumentException e) {
-            log.error("Invalid argue error processing request: {}", method, e);
-            errorResponse.setError(new JSONRPCError(JSONRPCError.INVALID_REQUEST, "Invalid params", e.getMessage()));
-        } catch (Exception e) {
-            errorResponse.setError(new JSONRPCError(JSONRPCError.INTERNAL_ERROR, "Internal error", e.getMessage()));
-            log.error("Internal error processing request {}.", method, e);
         }
-        return Flux.just(errorResponse);
+        catch (A2AError ex) {
+            return Flux.just(failure(id, ex));
+        }
+        catch (IllegalArgumentException ex) {
+            return Flux.just(failure(id, new InvalidParamsError(null, "Invalid parameters",
+                    Map.of("cause", message(ex)))));
+        }
+        catch (Exception ex) {
+            log.error("Internal error processing streaming JSON-RPC request", ex);
+            return Flux.just(failure(id, new InternalError("Internal error")));
+        }
     }
 
-    private JSONRPCResponse newResponse(JSONRPCRequest request) {
-        JSONRPCResponse response = new JSONRPCResponse();
-        response.setId(request.getId());
-        return response;
+    private <T> T decode(Object value, Class<T> type) {
+        try {
+            return SdkModelCodec.fromJson(objectMapper.writeValueAsString(value), type);
+        }
+        catch (Exception ex) {
+            throw new IllegalArgumentException("invalid " + type.getSimpleName(), ex);
+        }
     }
 
-    private Map<String, Object> streamResponse(Object event) {
+    private Object payload(Event event) {
         if (event instanceof Task task) {
-            return Map.of("task", task);
-        }
-        if (event instanceof TaskStatusUpdateEvent statusUpdate) {
-            return Map.of("statusUpdate", statusUpdate);
-        }
-        if (event instanceof TaskArtifactUpdateEvent artifactUpdate) {
-            return Map.of("artifactUpdate", artifactUpdate);
+            return SdkModelCodec.toMap(task);
         }
         if (event instanceof Message message) {
-            return Map.of("message", message);
+            return Map.of("message", SdkModelCodec.messageMap(message));
         }
-        throw new IllegalArgumentException("unsupported A2A 1.0 stream response: "
-                + event.getClass().getName());
+        if (event instanceof TaskStatusUpdateEvent statusUpdate) {
+            return SdkModelCodec.toMap(statusUpdate);
+        }
+        if (event instanceof TaskArtifactUpdateEvent artifactUpdate) {
+            return SdkModelCodec.toMap(artifactUpdate);
+        }
+        throw new IllegalArgumentException("unsupported A2A SDK event: " + event.getClass().getName());
     }
 
-    private Map<String, Object> sendMessageResponse(SendMessageResponse response) {
-        if (response instanceof Task task) {
-            return Map.of("task", task);
-        }
-        if (response instanceof Message message) {
-            return Map.of("message", message);
-        }
-        throw new IllegalArgumentException("unsupported A2A 1.0 send response: "
-                + (response == null ? "null" : response.getClass().getName()));
+    private Map<String, Object> success(Object id, Object result) {
+        Map<String, Object> response = envelope(id);
+        response.put("result", result);
+        return response;
     }
+
+    private Map<String, Object> failure(Object id, A2AError error) {
+        Map<String, Object> response = envelope(id);
+        Map<String, Object> errorBody = new LinkedHashMap<>();
+        errorBody.put("code", error.getCode());
+        errorBody.put("message", error.getMessage());
+        if (!error.getDetails().isEmpty()) {
+            errorBody.put("data", error.getDetails());
+        }
+        response.put("error", errorBody);
+        return response;
+    }
+
+    private Map<String, Object> envelope(Object id) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("jsonrpc", "2.0");
+        response.put("id", id);
+        return response;
+    }
+
+    private Object id(Map<String, Object> request) {
+        return request == null ? null : request.get("id");
+    }
+
+    private Object params(Map<String, Object> request) {
+        return request == null ? null : request.get("params");
+    }
+
+    private String requiredText(Map<String, Object> request, String field) {
+        Object value = request == null ? null : request.get(field);
+        if (!(value instanceof String text) || text.isBlank()) {
+            throw new IllegalArgumentException("missing " + field);
+        }
+        return text;
+    }
+
+    private String message(Exception ex) {
+        return ex.getMessage() == null || ex.getMessage().isBlank() ? "Invalid parameters" : ex.getMessage();
+    }
+
+    private A2AError protocolError(Throwable ex) {
+        if (ex instanceof A2AError error) {
+            return error;
+        }
+        if (ex instanceof IllegalArgumentException argumentException) {
+            return new InvalidParamsError(null, "Invalid parameters",
+                    Map.of("cause", message(argumentException)));
+        }
+        return new InternalError("Internal error");
+    }
+
 }

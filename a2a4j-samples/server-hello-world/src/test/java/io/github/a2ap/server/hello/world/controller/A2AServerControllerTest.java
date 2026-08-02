@@ -16,9 +16,9 @@
 
 package io.github.a2ap.server.hello.world.controller;
 
-import io.github.a2ap.core.model.AgentCard;
-import io.github.a2ap.core.model.AgentSkill;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentSkill;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -45,8 +45,6 @@ class A2AServerControllerTest {
     private static final String EXTENDED_SKILL_DESCRIPTION = "This skill is only visible to authenticated users.";
     @Autowired
     private MockMvc mockMvc;
-    @Autowired
-    private ObjectMapper objectMapper;
 
     @Test
     void authenticatedExtendedCard_shouldReturn401_whenNoApiKey() throws Exception {
@@ -79,21 +77,21 @@ class A2AServerControllerTest {
         assertThat(response).isNotEmpty();
 
         // Verify response is a valid AgentCard object
-        AgentCard agentCard = objectMapper.readValue(response, AgentCard.class);
+        AgentCard agentCard = JsonUtil.fromJson(response, AgentCard.class);
         assertThat(agentCard).isNotNull();
 
         // Verify AgentCard basic fields
-        assertThat(agentCard.getName()).isNotEmpty();
-        assertThat(agentCard.getDescription()).isNotEmpty();
-        assertThat(agentCard.getUrl()).isNotEmpty();
-        assertThat(agentCard.getVersion()).isNotEmpty();
-        assertThat(agentCard.getCapabilities()).isNotNull();
-        assertThat(agentCard.getDefaultInputModes()).isNotEmpty();
-        assertThat(agentCard.getDefaultOutputModes()).isNotEmpty();
-        assertThat(agentCard.getSkills()).isNotEmpty();
+        assertThat(agentCard.name()).isNotEmpty();
+        assertThat(agentCard.description()).isNotEmpty();
+        assertThat(agentCard.url()).isNotEmpty();
+        assertThat(agentCard.version()).isNotEmpty();
+        assertThat(agentCard.capabilities()).isNotNull();
+        assertThat(agentCard.defaultInputModes()).isNotEmpty();
+        assertThat(agentCard.defaultOutputModes()).isNotEmpty();
+        assertThat(agentCard.skills()).isNotEmpty();
 
-        // Verify supportsAuthenticatedExtendedCard field
-        assertThat(agentCard.isSupportsAuthenticatedExtendedCard()).isTrue();
+        // The official model exposes this capability through extendedAgentCard.
+        assertThat(agentCard.capabilities().extendedAgentCard()).isTrue();
     }
 
     @Test
@@ -101,20 +99,20 @@ class A2AServerControllerTest {
         MvcResult result = mockMvc.perform(get("/a2a/agent/authenticatedExtendedCard").header("X-API-Key", API_KEY).accept(MediaType.APPLICATION_JSON)).andExpect(status().isOk()).andReturn();
 
         String response = result.getResponse().getContentAsString();
-        AgentCard agentCard = objectMapper.readValue(response, AgentCard.class);
+        AgentCard agentCard = JsonUtil.fromJson(response, AgentCard.class);
 
         // Verify contains extended skill
-        assertThat(agentCard.getSkills().stream().anyMatch(skill -> EXTENDED_SKILL_ID.equals(skill.getId()))).isTrue();
+        assertThat(agentCard.skills().stream().anyMatch(skill -> EXTENDED_SKILL_ID.equals(skill.id()))).isTrue();
 
         // Verify extended skill details
-        AgentSkill extendedSkill = agentCard.getSkills().stream().filter(skill -> EXTENDED_SKILL_ID.equals(skill.getId())).findFirst().orElse(null);
+        AgentSkill extendedSkill = agentCard.skills().stream().filter(skill -> EXTENDED_SKILL_ID.equals(skill.id())).findFirst().orElse(null);
 
         assertThat(extendedSkill).isNotNull();
-        assertThat(extendedSkill.getName()).isEqualTo(EXTENDED_SKILL_NAME);
-        assertThat(extendedSkill.getDescription()).isEqualTo(EXTENDED_SKILL_DESCRIPTION);
-        assertThat(extendedSkill.getTags()).isNotNull();
-        assertThat(extendedSkill.getExamples()).isNotNull();
-        assertThat(extendedSkill.getInputModes()).isNotNull();
-        assertThat(extendedSkill.getOutputModes()).isNotNull();
+        assertThat(extendedSkill.name()).isEqualTo(EXTENDED_SKILL_NAME);
+        assertThat(extendedSkill.description()).isEqualTo(EXTENDED_SKILL_DESCRIPTION);
+        assertThat(extendedSkill.tags()).isNotNull();
+        assertThat(extendedSkill.examples()).isNotNull();
+        assertThat(extendedSkill.inputModes()).isNotNull();
+        assertThat(extendedSkill.outputModes()).isNotNull();
     }
 }

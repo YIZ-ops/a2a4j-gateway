@@ -16,12 +16,12 @@
 
 package io.github.a2ap.core.server;
 
-import io.github.a2ap.core.model.AgentCard;
-import io.github.a2ap.core.model.SendMessageResponse;
-import io.github.a2ap.core.model.SendStreamingMessageResponse;
-import io.github.a2ap.core.model.Task;
-import io.github.a2ap.core.model.TaskPushNotificationConfig;
-import io.github.a2ap.core.model.MessageSendParams;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.Event;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
 import reactor.core.publisher.Flux;
 
 /**
@@ -36,7 +36,7 @@ public interface A2AServer {
      * @param params The task params to send
      * @return SendMessageResponse The task or Message
      */
-    SendMessageResponse handleMessage(MessageSendParams params);
+    Event handleMessage(MessageSendParams params);
 
     /**
      * Handle send task streaming.
@@ -44,7 +44,7 @@ public interface A2AServer {
      * @param params The task params to send
      * @return Streaming events
      */
-    Flux<SendStreamingMessageResponse> handleMessageStream(MessageSendParams params);
+    Flux<StreamingEventKind> handleMessageStream(MessageSendParams params);
 
     /**
      * Gets a task by its ID.
@@ -102,5 +102,5 @@ public interface A2AServer {
      * @param taskId The ID of the task to subscribe to
      * @return A Flux of Task objects representing updates
      */
-    Flux<SendStreamingMessageResponse> subscribeToTaskUpdates(String taskId);
+    Flux<StreamingEventKind> subscribeToTaskUpdates(String taskId);
 }

@@ -267,7 +267,7 @@ public class GatewayAutoConfiguration {
     @Bean
     @ConditionalOnMissingBean(AgentCardNormalizer.class)
     public AgentCardNormalizer agentCardNormalizer(AgentCardUrlPolicy urlPolicy) {
-        return new AgentCardNormalizer(new com.fasterxml.jackson.databind.ObjectMapper(), urlPolicy);
+        return new AgentCardNormalizer(urlPolicy);
     }
 
     /** Creates the Card probe used by the initial and periodic refresh scheduler. */

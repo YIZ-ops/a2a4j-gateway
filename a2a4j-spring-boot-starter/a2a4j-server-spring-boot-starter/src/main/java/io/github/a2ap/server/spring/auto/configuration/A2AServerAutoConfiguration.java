@@ -17,17 +17,12 @@
 package io.github.a2ap.server.spring.auto.configuration;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.a2ap.core.model.AgentAuthentication;
-import io.github.a2ap.core.model.AgentCapabilities;
-import io.github.a2ap.core.model.AgentCard;
-import io.github.a2ap.core.model.AgentProvider;
-import io.github.a2ap.core.model.AgentSkill;
-import io.github.a2ap.core.model.RequestContext;
 import io.github.a2ap.core.server.A2AServer;
 import io.github.a2ap.core.server.AgentExecutor;
 import io.github.a2ap.core.server.Dispatcher;
 import io.github.a2ap.core.server.EventQueue;
 import io.github.a2ap.core.server.QueueManager;
+import io.github.a2ap.core.server.RequestContext;
 import io.github.a2ap.core.server.impl.DefaultA2AServer;
 import io.github.a2ap.core.server.impl.DefaultDispatcher;
 import io.github.a2ap.core.server.impl.InMemoryQueueManager;
@@ -42,9 +37,17 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import reactor.core.publisher.Mono;
 
-import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import org.a2aproject.sdk.spec.APIKeySecurityScheme;
+import org.a2aproject.sdk.spec.AgentCapabilities;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentProvider;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.a2aproject.sdk.spec.HTTPAuthSecurityScheme;
+import org.a2aproject.sdk.spec.SecurityRequirement;
+import org.a2aproject.sdk.spec.SecurityScheme;
 
 /**
  * Autoconfiguration for A2A Server components.
@@ -180,7 +183,6 @@ public class A2AServerAutoConfiguration {
     @ConditionalOnMissingBean
     public AgentCard agentCard(final A2AServerProperties a2aServerProperties) {
         AgentCard.Builder builder = AgentCard.builder()
-                .id(a2aServerProperties.getId())
                 .name(a2aServerProperties.getName())
                 .url(a2aServerProperties.getUrl())
                 .version(a2aServerProperties.getVersion())
@@ -188,17 +190,14 @@ public class A2AServerAutoConfiguration {
 
         if (a2aServerProperties.getUrl() != null && !a2aServerProperties.getUrl().isBlank()) {
             builder.supportedInterfaces(a2aServerProperties.getProtocolBindings().stream()
-                    .map(binding -> Map.of("url", a2aServerProperties.getUrl(), "protocolBinding", binding,
-                            "protocolVersion", "1.0"))
+                    .map(binding -> new AgentInterface(binding, a2aServerProperties.getUrl(), null, "1.0"))
                     .collect(Collectors.toList()));
         }
 
         // Add provider information if exists
         if (a2aServerProperties.getProvider() != null) {
-            builder.provider(AgentProvider.builder()
-                    .organization(a2aServerProperties.getProvider().getName())
-                    .url(a2aServerProperties.getProvider().getUrl())
-                    .build());
+            builder.provider(new AgentProvider(a2aServerProperties.getProvider().getName(),
+                    a2aServerProperties.getProvider().getUrl()));
         }
 
         // Add documentation URL if exists
@@ -211,14 +210,7 @@ public class A2AServerAutoConfiguration {
             builder.capabilities(AgentCapabilities.builder()
                     .streaming(a2aServerProperties.getCapabilities().isStreaming())
                     .pushNotifications(a2aServerProperties.getCapabilities().isPushNotifications())
-                    .stateTransitionHistory(a2aServerProperties.getCapabilities().isStateTransitionHistory())
-                    .build());
-        }
-
-        // Add authentication information if exists
-        if (a2aServerProperties.getAuthentication() != null && a2aServerProperties.getAuthentication().getType() != null) {
-            builder.authentication(AgentAuthentication.builder()
-                    .schemes(List.of(a2aServerProperties.getAuthentication().getType()))
+                    .extendedAgentCard(a2aServerProperties.isSupportsAuthenticatedExtendedCard())
                     .build());
         }
 
@@ -227,14 +219,13 @@ public class A2AServerAutoConfiguration {
             builder.securitySchemes(a2aServerProperties.getSecuritySchemes().entrySet().stream()
                     .collect(Collectors.toMap(
                             Map.Entry::getKey,
-                            e -> io.github.a2ap.core.model.SecurityScheme.builder()
-                                    .type(e.getValue().getType())
-                                    .build())));
+                            e -> securityScheme(e.getValue().getType()))));
         }
 
         // Add security requirements if exists
         if (a2aServerProperties.getSecurity() != null && !a2aServerProperties.getSecurity().isEmpty()) {
-            builder.security(a2aServerProperties.getSecurity());
+            builder.securityRequirements(a2aServerProperties.getSecurity().stream()
+                    .map(SecurityRequirement::new).collect(Collectors.toList()));
         }
 
         // Add default input modes if exists
@@ -263,10 +254,14 @@ public class A2AServerAutoConfiguration {
                     .collect(Collectors.toList()));
         }
 
-        // Add authenticated extended card support
-        builder.supportsAuthenticatedExtendedCard(a2aServerProperties.isSupportsAuthenticatedExtendedCard());
-
         return builder.build();
+    }
+
+    private static SecurityScheme securityScheme(String configuredType) {
+        if ("apiKey".equalsIgnoreCase(configuredType)) {
+            return new APIKeySecurityScheme(APIKeySecurityScheme.Location.HEADER, "Authorization", null);
+        }
+        return new HTTPAuthSecurityScheme("bearer", "Bearer", null);
     }
 
     /**

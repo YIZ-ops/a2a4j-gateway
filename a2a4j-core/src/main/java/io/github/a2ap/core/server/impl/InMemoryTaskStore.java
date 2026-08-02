@@ -16,8 +16,8 @@
 
 package io.github.a2ap.core.server.impl;
 
-import io.github.a2ap.core.model.Task;
 import io.github.a2ap.core.server.TaskStore;
+import org.a2aproject.sdk.spec.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +54,7 @@ public class InMemoryTaskStore implements TaskStore {
 
     @Override
     public void save(Task task) {
-        store.put(task.getId(), task);
+        store.put(task.id(), task);
     }
 
     @Override

@@ -46,8 +46,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  *       state-transition-history: true
  * </pre>
  *
- * @see io.github.a2ap.core.model.AgentCard
- * @see io.github.a2ap.core.model.AgentCapabilities
+ * @see org.a2aproject.sdk.spec.AgentCard
+ * @see org.a2aproject.sdk.spec.AgentCapabilities
  */
 @ConfigurationProperties(prefix = "a2a.server")
 public class A2AServerProperties implements Serializable {

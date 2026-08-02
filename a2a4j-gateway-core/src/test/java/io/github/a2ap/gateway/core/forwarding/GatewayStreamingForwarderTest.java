@@ -138,7 +138,8 @@ class GatewayStreamingForwarderTest {
                 sink.onCancel(() -> cancelled.set(true));
                 sink.next(new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 200,
                         "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"task\":{"
-                                + "\"id\":\"up-1\",\"contextId\":\"up-c\"}}}", Map.of(), false));
+                                + "\"id\":\"up-1\",\"contextId\":\"up-c\","
+                                + "\"status\":{\"state\":\"TASK_STATE_WORKING\"}}}}", Map.of(), false));
             });
         }
 
@@ -157,7 +158,8 @@ class GatewayStreamingForwarderTest {
                 OutboundCredentials credentials) {
             return Flux.just(new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 200,
                     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"task\":{"
-                            + "\"id\":\"up-1\",\"contextId\":\"up-c\"}}}", Map.of("SSE-Id", "e-1"), false),
+                            + "\"id\":\"up-1\",\"contextId\":\"up-c\","
+                            + "\"status\":{\"state\":\"TASK_STATE_WORKING\"}}}}", Map.of("SSE-Id", "e-1"), false),
                     new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 200,
                             "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"statusUpdate\":{"
                                     + "\"taskId\":\"up-1\",\"contextId\":\"up-c\","

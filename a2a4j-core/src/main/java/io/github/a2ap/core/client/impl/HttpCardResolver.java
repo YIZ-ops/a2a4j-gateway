@@ -17,9 +17,10 @@
 package io.github.a2ap.core.client.impl;
 
 import io.github.a2ap.core.client.CardResolver;
-import io.github.a2ap.core.model.AgentCard;
 import io.github.a2ap.core.protocol.v1.A2AProtocolV1;
-import io.github.a2ap.core.util.JsonUtil;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonProcessingException;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.spec.AgentCard;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -75,6 +76,13 @@ public class HttpCardResolver implements CardResolver {
         return this.httpClient.get().uri(path)
                 .responseSingle((response, content) -> response.status().code() >= 200
                         && response.status().code() < 300 ? content.asString() : Mono.empty())
-                .map(data -> JsonUtil.fromJson(data, AgentCard.class)).block();
+                .map(data -> {
+                    try {
+                        return JsonUtil.fromJson(data, AgentCard.class);
+                    }
+                    catch (JsonProcessingException ex) {
+                        throw new IllegalArgumentException("invalid AgentCard", ex);
+                    }
+                }).block();
     }
 }

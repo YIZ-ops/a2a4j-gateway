@@ -16,13 +16,12 @@
 
 package io.github.a2ap.core.server;
 
-import io.github.a2ap.core.model.MessageSendParams;
-import io.github.a2ap.core.model.RequestContext;
-import io.github.a2ap.core.model.Task;
-import io.github.a2ap.core.model.TaskArtifactUpdateEvent;
-import io.github.a2ap.core.model.TaskPushNotificationConfig;
-import io.github.a2ap.core.model.TaskStatusUpdateEvent;
-import io.github.a2ap.core.model.TaskUpdate;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.UpdateEvent;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
@@ -56,7 +55,7 @@ public interface TaskManager {
      * @param taskUpdates taskUpdate TaskStatus or Artifact update
      * @return mono of task
      */
-    Mono<Task> applyTaskUpdate(Task task, List<TaskUpdate> taskUpdates);
+    Mono<Task> applyTaskUpdate(Task task, List<UpdateEvent> taskUpdates);
 
     /**
      * apply task update for task
@@ -65,7 +64,7 @@ public interface TaskManager {
      * @param update      tash update TaskStatus or Artifact update
      * @return mono of task
      */
-    Mono<Task> applyTaskUpdate(Task task, TaskUpdate update);
+    Mono<Task> applyTaskUpdate(Task task, UpdateEvent update);
 
     /**
      * Apply status update with append support from TaskStatusUpdateEvent

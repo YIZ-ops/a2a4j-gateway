@@ -1,6 +1,6 @@
 ﻿# MVP dependency vulnerability scan (OSV)
 
-Generated: `2026-08-01T09:47:22.4101278Z`; dependencies: `87`; source: [https://api.osv.dev](https://api.osv.dev).
+Generated: `2026-08-02T00:56:41.2595092Z`; dependencies: `91`; source: [https://api.osv.dev](https://api.osv.dev).
 
 Runtime compile/runtime dependencies are checked through the OSV Maven API. HIGH/CRITICAL findings block formal release.
 

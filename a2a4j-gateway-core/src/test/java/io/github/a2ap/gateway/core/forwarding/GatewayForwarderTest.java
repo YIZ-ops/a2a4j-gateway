@@ -115,7 +115,8 @@ class GatewayForwarderTest {
             this.credentials = credentials;
             return Flux.just(new OutboundResponse(ProtocolDescriptor.jsonRpc(), 200,
                     "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"task\":{"
-                            + "\"id\":\"up-1\",\"contextId\":\"up-c\"}}}", Map.of(), true));
+                            + "\"id\":\"up-1\",\"contextId\":\"up-c\","
+                            + "\"status\":{\"state\":\"TASK_STATE_WORKING\"}}}}", Map.of(), true));
         }
 
     }

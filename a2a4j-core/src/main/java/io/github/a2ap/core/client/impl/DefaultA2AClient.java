@@ -6,12 +6,6 @@
  * You may obtain a copy of the License at
  *
  *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 
 package io.github.a2ap.core.client.impl;
@@ -19,569 +13,360 @@ package io.github.a2ap.core.client.impl;
 import com.fasterxml.jackson.databind.JsonNode;
 import io.github.a2ap.core.client.A2AClient;
 import io.github.a2ap.core.client.CardResolver;
-import io.github.a2ap.core.exception.A2AError;
-import io.github.a2ap.core.jsonrpc.JSONRPCError;
-import io.github.a2ap.core.jsonrpc.JSONRPCRequest;
-import io.github.a2ap.core.jsonrpc.JSONRPCResponse;
-import io.github.a2ap.core.model.AgentCard;
-import io.github.a2ap.core.model.Message;
-import io.github.a2ap.core.model.SendMessageResponse;
-import io.github.a2ap.core.model.SendStreamingMessageResponse;
-import io.github.a2ap.core.model.Task;
-import io.github.a2ap.core.model.TaskArtifactUpdateEvent;
-import io.github.a2ap.core.model.TaskIdParams;
-import io.github.a2ap.core.model.TaskPushNotificationConfig;
-import io.github.a2ap.core.model.TaskQueryParams;
-import io.github.a2ap.core.model.MessageSendParams;
-import io.github.a2ap.core.model.TaskStatusUpdateEvent;
 import io.github.a2ap.core.protocol.v1.A2AProtocolV1;
 import io.github.a2ap.core.util.JsonUtil;
+import io.github.a2ap.core.util.SdkModelCodec;
 import io.netty.buffer.Unpooled;
 import io.netty.util.internal.StringUtil;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.A2AErrorCodes;
+import org.a2aproject.sdk.spec.Event;
+import org.a2aproject.sdk.spec.InternalError;
+import org.a2aproject.sdk.spec.InvalidParamsError;
+import org.a2aproject.sdk.spec.InvalidRequestError;
+import org.a2aproject.sdk.spec.JSONParseError;
+import org.a2aproject.sdk.spec.MethodNotFoundError;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.Task;
+import org.a2aproject.sdk.spec.TaskArtifactUpdateEvent;
+import org.a2aproject.sdk.spec.TaskIdParams;
+import org.a2aproject.sdk.spec.TaskPushNotificationConfig;
+import org.a2aproject.sdk.spec.TaskQueryParams;
+import org.a2aproject.sdk.spec.TaskStatusUpdateEvent;
+import org.a2aproject.sdk.spec.TaskNotFoundError;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
-import java.util.Map;
-import java.util.UUID;
-import java.util.Objects;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 
-/**
- * Default implementation of the A2AClient interface providing comprehensive A2A protocol client functionality.
- *
- * This implementation offers a complete HTTP-based client for interacting with A2A protocol-compliant
- * agents. It handles all aspects of the client-side A2A communication including agent discovery,
- * task management, streaming operations, and push notification configuration.
- * 
- * Key features:
- * - JSON-RPC 2.0 based communication over HTTP
- * - Automatic agent card resolution and caching
- * - Support for both synchronous and streaming message operations
- * - Comprehensive task lifecycle management (send, get, cancel, resubscribe)
- * - Push notification configuration management
- * - Built-in capability detection and validation
- * - Robust error handling and logging
- * 
- * Communication protocol:
- * - Uses Reactor Netty HttpClient for non-blocking HTTP operations
- * - All requests follow JSON-RPC 2.0 specification
- * - Streaming responses are handled via Server-Sent Events (SSE)
- * - Automatic request ID generation for proper correlation
- * 
- * Supported A2A methods:
- * - "SendMessage": Send messages and create tasks
- * - "SendStreamingMessage": Send messages with streaming updates
- * - "GetTask": Retrieve task information
- * - "CancelTask": Cancel ongoing tasks
- * - "CreateTaskPushNotificationConfig": Configure push notifications
- * - "GetTaskPushNotificationConfig": Retrieve push notification settings
- * - "SubscribeToTask": Resubscribe to task updates
- * 
- * The client maintains agent card information for efficient communication and provides
- * capability checking to ensure operations are supported by the target agent.
- * 
- * Thread safety: This implementation is thread-safe and can be used concurrently
- * across multiple threads.
- */
+/** Reactor Netty A2A client using official SDK standard domain records. */
 public class DefaultA2AClient implements A2AClient {
 
     private static final Logger log = LoggerFactory.getLogger(DefaultA2AClient.class);
 
     private AgentCard agentCard;
-    
     private final CardResolver cardResolver;
-    
     private final HttpClient client;
 
-    /**
-     * Constructs a new A2AClientImpl with the specified CardResolver.
-     * 
-     * @param cardResolver The CardResolver to use for resolving agent cards.
-     */
     public DefaultA2AClient(CardResolver cardResolver) {
-        this.cardResolver = cardResolver;
-        this.agentCard = this.retrieveAgentCard();
+        this.cardResolver = Objects.requireNonNull(cardResolver, "cardResolver");
+        this.agentCard = cardResolver.resolveCard();
         this.client = HttpClient.create();
     }
 
-    /**
-     * Constructs a new A2aClient with the agent card info
-     * @param agentCard agent card info
-     */
     public DefaultA2AClient(AgentCard agentCard) {
-        this.agentCard = agentCard;
-        this.client = HttpClient.create();
+        this.agentCard = Objects.requireNonNull(agentCard, "agentCard");
         this.cardResolver = null;
+        this.client = HttpClient.create();
     }
-    
-    /**
-     * Constructs a new A2AClientImpl with the specified CardResolver.
-     *
-     * @param cardResolver The CardResolver to use for resolving agent cards.
-     * @param agentCard The agent card info.
-     */
+
     public DefaultA2AClient(AgentCard agentCard, CardResolver cardResolver) {
-        this.agentCard = agentCard;
+        this.agentCard = Objects.requireNonNull(agentCard, "agentCard");
         this.cardResolver = cardResolver;
         this.client = HttpClient.create();
     }
 
     @Override
     public AgentCard agentCard() {
-        if (agentCard != null) {
-            return agentCard;
-        }
-        return retrieveAgentCard();
+        return agentCard == null ? retrieveAgentCard() : agentCard;
     }
 
     @Override
     public AgentCard retrieveAgentCard() {
-        if (this.cardResolver != null) {
-            AgentCard card = cardResolver.resolveCard();
-            this.agentCard = card;
-            return card;        
-        } else {
-            log.warn("Retrieving agent card error due the card resolver is null, use the cache agent card {}", this.agentCard.getName());
-            return this.agentCard;
+        if (cardResolver != null) {
+            agentCard = cardResolver.resolveCard();
         }
-    }
-
-    /**
-     * Sends a task request to the target agent URL.
-     *
-     * @param taskSendParams The parameters for sending the task.
-     * @return The created Task object received from the agent.
-     */
-    @Override
-    public SendMessageResponse sendMessage(MessageSendParams taskSendParams) throws A2AError {
-        log.info("Sending message to {} with params: {}", this.agentCard.getName(), taskSendParams);
-        try {
-            JSONRPCRequest jsonRpcRequest = JSONRPCRequest.builder()
-                    .method("SendMessage")
-                    .params(taskSendParams)
-                    .id(UUID.randomUUID().toString())
-                    .build();
-            String responseData = client
-                    .headers(headers -> {
-                        headers.add("Content-Type", "application/json");
-                        headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
-                    })
-                    .post()
-                    .uri(this.agentCard.getUrl())
-                    .send(Mono.just(Unpooled.wrappedBuffer(JsonUtil.toJson(jsonRpcRequest).getBytes(StandardCharsets.UTF_8))))
-                    .responseContent()
-                    .aggregate()
-                    .asString()
-                    .block();
-            
-            if (responseData != null) {
-                JSONRPCResponse response = JsonUtil.fromJson(responseData, JSONRPCResponse.class);
-                if (response != null) {
-                    if (response.getError() != null) {
-                        JSONRPCError error = response.getError();
-                        log.error("JSON-RPC error when sending message: code={}, message={}, data={}",
-                                error.getCode(),
-                                error.getMessage(),
-                                error.getData());
-                        throw new A2AError(error.getMessage(), error.getCode(), error.getData());
-                    }
-                    if (response.getResult() != null) {
-                        String jsonStr = JsonUtil.toJson(response.getResult());
-                        JsonNode jsonNode = JsonUtil.fromJson(jsonStr);
-                        if (jsonNode != null && jsonNode.has("message")) {
-                            SendMessageResponse messageResponse = JsonUtil.fromJson(jsonNode.get("message").toString(),
-                                    Message.class);
-                            log.info("Message sent successfully. Received response: {}", messageResponse);
-                            return messageResponse;
-                        }
-                        if (jsonNode != null && jsonNode.has("task")) {
-                            SendMessageResponse messageResponse = JsonUtil.fromJson(jsonNode.get("task").toString(),
-                                    Task.class);
-                            log.info("Message sent successfully. Received response: {}", messageResponse);
-                            return messageResponse;
-                        }
-                    }
-                }
-            }
-            throw new A2AError("response data is null");
-        } catch (Exception e) {
-            log.error("Error sending message to {}: {}", this.agentCard.getName(), e.getMessage(), e);
-            throw new A2AError(e.getMessage(), e); 
-        }
+        return agentCard;
     }
 
     @Override
-    public Flux<SendStreamingMessageResponse> sendMessageStream(MessageSendParams params) {
-        log.info("Send stream message for {} from {}", params, this.agentCard.getName());
-        
-        JSONRPCRequest jsonRpcRequest = JSONRPCRequest.builder()
-                .method("SendStreamingMessage")
-                .params(params)
-                .id(UUID.randomUUID().toString())
-                .build();
-        
-        return client
-                .headers(headers -> {
-                    headers.add("Content-Type", "application/json");
-                    headers.add("Accept", "text/event-stream");
-                    headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
-                })
-                .post()
-                .uri(this.agentCard.getUrl())
-                .send(Mono.just(Unpooled.wrappedBuffer(JsonUtil.toJson(jsonRpcRequest).getBytes(StandardCharsets.UTF_8))))
-                .responseContent()
-                .asString()
-                .scan("", (accumulator, chunk) -> {
-                    // Accumulate SSE data until complete events are found
-                    return accumulator + chunk;
-                })
-                .flatMap(this::parseSseChunks)
-                .filter(Objects::nonNull)
-                .doOnError(e -> log.error("Error receiving streaming updates for {}: {}", params, e.getMessage(), e))
-                .doOnComplete(() -> log.info("Message updates stream completed for {}.", params));
+    public Event sendMessage(MessageSendParams params) throws A2AError {
+        return send("SendMessage", wireParams(params), Event.class);
     }
 
-    /**
-     * Retrieves a specific task by its ID from the target agent URL.
-     *
-     * @param queryParams         The query params task to retrieve.
-     * @return An Optional containing the Task object if found, otherwise empty.
-     */
     @Override
-    public Task getTask(TaskQueryParams queryParams) {
-        log.info("Getting task {} from {}", queryParams, this.agentCard.getName());
-        try {
-            JSONRPCRequest jsonRpcRequest = JSONRPCRequest.builder()
-                    .method("GetTask")
-                    .params(queryParams)
-                    .id(UUID.randomUUID().toString())
-                    .build();
-            
-            String responseData = client
-                    .headers(headers -> {
-                        headers.add("Content-Type", "application/json");
-                        headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
-                    })
-                    .post()
-                    .uri(this.agentCard.getUrl())
-                    .send(Mono.just(Unpooled.wrappedBuffer(JsonUtil.toJson(jsonRpcRequest).getBytes(StandardCharsets.UTF_8))))
-                    .responseContent()
-                    .aggregate()
-                    .asString()
-                    .block();
-            
-            if (responseData != null) {
-                JSONRPCResponse response = JsonUtil.fromJson(responseData, JSONRPCResponse.class);
-                if (response != null) {
-                    if (response.getError() != null) {
-                        log.error("JSON-RPC error when getting task: code={}, message={}, data={}", 
-                                response.getError().getCode(), 
-                                response.getError().getMessage(), 
-                                response.getError().getData());
-                        return null;
-                    }
-                    if (response.getResult() != null) {
-                        Task task = JsonUtil.fromJson(JsonUtil.toJson(response.getResult()), Task.class);
-                        log.info("Successfully retrieved task {}: {}", queryParams, task);
-                        return task;
-                    }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            log.error("Error getting task {} from {}: {}", queryParams, this.agentCard.getName(), e.getMessage(), e);
-            return null;
-        }
+    public Flux<StreamingEventKind> sendMessageStream(MessageSendParams params) {
+        return stream("SendStreamingMessage", wireParams(params));
+    }
+
+    @Override
+    public Task getTask(TaskQueryParams params) {
+        return send("GetTask", SdkModelCodec.toMap(params), Task.class);
     }
 
     @Override
     public Task cancelTask(TaskIdParams params) {
-        log.info("Cancelling task {} on {}", params, this.agentCard.getName());
-        try {
-            // Build JSON-RPC request
-            JSONRPCRequest jsonRpcRequest = JSONRPCRequest.builder()
-                    .method("CancelTask")
-                    .params(params)
-                    .id(UUID.randomUUID().toString())
-                    .build();
-            
-            String responseData = client
-                    .headers(headers -> {
-                        headers.add("Content-Type", "application/json");
-                        headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
-                    })
-                    .post()
-                    .uri(this.agentCard.getUrl())
-                    .send(Mono.just(Unpooled.wrappedBuffer(JsonUtil.toJson(jsonRpcRequest).getBytes(StandardCharsets.UTF_8))))
-                    .responseContent()
-                    .aggregate()
-                    .asString()
-                    .block();
-            
-            if (responseData != null) {
-                JSONRPCResponse response = JsonUtil.fromJson(responseData, JSONRPCResponse.class);
-                if (response != null) {
-                    if (response.getError() != null) {
-                        log.error("JSON-RPC error when cancelling task: code={}, message={}, data={}", 
-                                response.getError().getCode(), 
-                                response.getError().getMessage(), 
-                                response.getError().getData());
-                        return null;
-                    }
-                    if (response.getResult() != null) {
-                        Task task = JsonUtil.fromJson(JsonUtil.toJson(response.getResult()), Task.class);
-                        log.info("Task {} cancelled successfully.", params);
-                        return task;
-                    }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            log.error("Error cancelling task {} on {}: {}", params, this.agentCard.getName(), e.getMessage(), e);
-            return null;
-        }
+        return send("CancelTask", SdkModelCodec.toMap(params), Task.class);
     }
 
     @Override
     public TaskPushNotificationConfig setTaskPushNotification(TaskPushNotificationConfig params) {
-        log.info("Setting push notification config for task {} on {}", params.getTaskId(), this.agentCard.getName());
-        try {
-            JSONRPCRequest jsonRpcRequest = JSONRPCRequest.builder()
-                    .method("CreateTaskPushNotificationConfig")
-                    .params(params)
-                    .id(UUID.randomUUID().toString())
-                    .build();
-            
-            String responseData = client
-                    .headers(headers -> {
-                        headers.add("Content-Type", "application/json");
-                        headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
-                    })
-                    .post()
-                    .uri(this.agentCard.getUrl())
-                    .send(Mono.just(Unpooled.wrappedBuffer(JsonUtil.toJson(jsonRpcRequest).getBytes(StandardCharsets.UTF_8))))
-                    .responseContent()
-                    .aggregate()
-                    .asString()
-                    .block();
-            
-            if (responseData != null) {
-                JSONRPCResponse response = JsonUtil.fromJson(responseData, JSONRPCResponse.class);
-                if (response != null) {
-                    if (response.getError() != null) {
-                        log.error("JSON-RPC error when setting push notification config: code={}, message={}, data={}", 
-                                response.getError().getCode(), 
-                                response.getError().getMessage(), 
-                                response.getError().getData());
-                        return null;
-                    }
-                    if (response.getResult() != null) {
-                        return JsonUtil.fromJson(JsonUtil.toJson(response.getResult()), TaskPushNotificationConfig.class);
-                    }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            log.error("Error setting push notification config for task {} on {}: {}", params.getTaskId(), this.agentCard.getName(), e.getMessage(), e);
-            return null;
-        }
+        return send("CreateTaskPushNotificationConfig", SdkModelCodec.toMap(params),
+                TaskPushNotificationConfig.class);
     }
 
     @Override
     public TaskPushNotificationConfig getTaskPushNotification(TaskIdParams params) {
-        log.info("Getting push notification config for task {} from {}", params.getId(), this.agentCard.getName());
-        try {
-            JSONRPCRequest jsonRpcRequest = JSONRPCRequest.builder()
-                    .method("GetTaskPushNotificationConfig")
-                    .params(params)
-                    .id(UUID.randomUUID().toString())
-                    .build();
-            
-            String responseData = client
-                    .headers(headers -> {
-                        headers.add("Content-Type", "application/json");
-                        headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
-                    })
-                    .post()
-                    .uri(this.agentCard.getUrl())
-                    .send(Mono.just(Unpooled.wrappedBuffer(JsonUtil.toJson(jsonRpcRequest).getBytes(StandardCharsets.UTF_8))))
-                    .responseContent()
-                    .aggregate()
-                    .asString()
-                    .block();
-            
-            if (responseData != null) {
-                JSONRPCResponse response = JsonUtil.fromJson(responseData, JSONRPCResponse.class);
-                if (response != null) {
-                    if (response.getError() != null) {
-                        log.error("JSON-RPC error when getting push notification config: code={}, message={}, data={}", 
-                                response.getError().getCode(), 
-                                response.getError().getMessage(), 
-                                response.getError().getData());
-                        return null;
-                    }
-                    if (response.getResult() != null) {
-                        return JsonUtil.fromJson(JsonUtil.toJson(response.getResult()), TaskPushNotificationConfig.class);
-                    }
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            log.error("Error getting push notification config for task {} from {}: {}", params.getId(), this.agentCard.getName(), e.getMessage(), e);
-            return null;
-        }
+        return send("GetTaskPushNotificationConfig", SdkModelCodec.toMap(params),
+                TaskPushNotificationConfig.class);
     }
 
     @Override
-    public Flux<SendStreamingMessageResponse> resubscribeTask(TaskQueryParams params) {
-        log.info("Resubscribing to task updates for {} from {}", params.getTaskId(), this.agentCard.getName());
-        
-        JSONRPCRequest jsonRpcRequest = JSONRPCRequest.builder()
-                .method("SubscribeToTask")
-                .params(Map.of("id", params.getTaskId()))
-                .id(UUID.randomUUID().toString())
-                .build();
-        
-        return client
-                .headers(headers -> {
-                    headers.add("Content-Type", "application/json");
-                    headers.add("Accept", "text/event-stream");
-                    headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
-                })
-                .post()
-                .uri(this.agentCard.getUrl())
-                .send(Mono.just(Unpooled.wrappedBuffer(JsonUtil.toJson(jsonRpcRequest).getBytes(StandardCharsets.UTF_8))))
-                .responseContent()
-                .asString()
-                .scan("", (accumulator, chunk) -> {
-                    // Accumulate SSE data until complete events are found
-                    return accumulator + chunk;
-                })
-                .flatMap(this::parseSseChunks)
-                .filter(Objects::nonNull)
-                .doOnError(e -> log.error("Error resubscribing to task updates for {}: {}", params.getTaskId(), e.getMessage(), e))
-                .doOnComplete(() -> log.info("Task resubscription stream completed for {}.", params.getTaskId()));
+    public Flux<StreamingEventKind> resubscribeTask(TaskQueryParams params) {
+        return stream("SubscribeToTask", Map.of("id", params.id()));
     }
 
     @Override
     public Boolean supports(String capability) {
-        if (agentCard == null) {
-            agentCard = retrieveAgentCard();
-        }
-        
-        if (agentCard == null || agentCard.getCapabilities() == null) {
+        AgentCard card = agentCard();
+        if (card == null || card.capabilities() == null || capability == null) {
             return false;
         }
-        
-        // check agent supports
         return switch (capability.toLowerCase()) {
-            case "streaming" -> agentCard.getCapabilities().isStreaming();
-            case "pushnotifications" -> agentCard.getCapabilities().isPushNotifications();
+            case "streaming" -> card.capabilities().streaming();
+            case "pushnotifications" -> card.capabilities().pushNotifications();
+            case "extendedagentcard" -> card.capabilities().extendedAgentCard();
             default -> false;
         };
     }
-    
-    private SendStreamingMessageResponse parseServerSentEvent(String eventData) {
+
+    private <T> T send(String method, Map<String, Object> params, Class<T> resultType) {
+        try {
+            List<String> chunks = exchange(method, params, false).collectList().block();
+            String body = chunks == null ? null : String.join("", chunks);
+            if (body == null || body.isBlank()) {
+                throw new InternalError("A2A response was empty");
+            }
+            JsonNode response = JsonUtil.fromJson(body);
+            if (response == null || !response.isObject()) {
+                throw new InternalError("A2A response was not valid JSON");
+            }
+            checkError(response);
+            JsonNode result = response.get("result");
+            if (result == null || result.isNull()) {
+                return null;
+            }
+            if (resultType == Event.class) {
+                return resultType.cast(event(result));
+            }
+            if (resultType == Task.class && result.has("task")) {
+                result = result.get("task");
+            }
+            return SdkModelCodec.fromJson(result.toString(), resultType);
+        }
+        catch (A2AError ex) {
+            throw ex;
+        }
+        catch (Exception ex) {
+            log.error("A2A {} failed for {}", method, cardName(), ex);
+            throw internalError("A2A " + method + " failed", ex);
+        }
+    }
+
+    private Flux<StreamingEventKind> stream(String method, Map<String, Object> params) {
+        return Flux.defer(() -> {
+            SseFrameDecoder decoder = new SseFrameDecoder();
+            return exchange(method, params, true)
+                    .concatMapIterable(decoder::accept)
+                    .concatWith(Flux.defer(() -> Flux.fromIterable(decoder.finish())));
+        })
+                .doOnError(ex -> log.error("A2A streaming {} failed", method, ex));
+    }
+
+    private Flux<String> exchange(String method, Map<String, Object> params, boolean streaming) {
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("jsonrpc", "2.0");
+        request.put("method", method);
+        request.put("params", params);
+        request.put("id", UUID.randomUUID().toString());
+        return client.headers(headers -> {
+            headers.add("Content-Type", "application/json");
+            headers.add("Accept", streaming ? "text/event-stream" : "application/json");
+            headers.add(A2AProtocolV1.VERSION_HEADER, A2AProtocolV1.VERSION);
+        }).post().uri(endpoint()).send(Mono.just(Unpooled.wrappedBuffer(
+                JsonUtil.toJson(request).getBytes(StandardCharsets.UTF_8))))
+                .responseContent().asString();
+    }
+
+    private Map<String, Object> wireParams(MessageSendParams params) {
+        Map<String, Object> wire = new LinkedHashMap<>();
+        wire.put("message", SdkModelCodec.messageMap(params.message()));
+        if (params.configuration() != null) {
+            wire.put("configuration", SdkModelCodec.toMap(params.configuration()));
+        }
+        if (params.metadata() != null) {
+            wire.put("metadata", params.metadata());
+        }
+        if (params.tenant() != null) {
+            wire.put("tenant", params.tenant());
+        }
+        return wire;
+    }
+
+    private StreamingEventKind parseServerSentEvent(String eventData) {
         if (StringUtil.isNullOrEmpty(eventData)) {
             return null;
         }
-        
-        try {
-            // Parse SSE format data
-            String jsonData = extractJsonFromSSE(eventData);
-            if (StringUtil.isNullOrEmpty(jsonData)) {
-                return null;
-            }
-            
-            JSONRPCResponse jsonRpcResponse = JsonUtil.fromJson(jsonData, JSONRPCResponse.class);
-            
-            if (jsonRpcResponse != null) {
-                if (jsonRpcResponse.getError() != null) {
-                    log.error("JSON-RPC error in server-sent event: code={}, message={}, data={}", 
-                            jsonRpcResponse.getError().getCode(), 
-                            jsonRpcResponse.getError().getMessage(), 
-                            jsonRpcResponse.getError().getData());
-                    return null;
-                }
-                if (jsonRpcResponse.getResult() != null) {
-                    String result = JsonUtil.toJson(jsonRpcResponse.getResult());
-                    JsonNode jsonNode = JsonUtil.fromJson(result);
-                    if (jsonNode != null && jsonNode.has("task")) {
-                        return JsonUtil.fromJson(jsonNode.get("task").toString(), Task.class);
-                    }
-                    if (jsonNode != null && jsonNode.has("message")) {
-                        return JsonUtil.fromJson(jsonNode.get("message").toString(), Message.class);
-                    }
-                    if (jsonNode != null && jsonNode.has("artifactUpdate")) {
-                        return JsonUtil.fromJson(jsonNode.get("artifactUpdate").toString(),
-                                TaskArtifactUpdateEvent.class);
-                    }
-                    if (jsonNode != null && jsonNode.has("statusUpdate")) {
-                        return JsonUtil.fromJson(jsonNode.get("statusUpdate").toString(),
-                                TaskStatusUpdateEvent.class);
-                    }
-                    log.error("Can not parse A2A 1.0 server-sent event: {}", jsonRpcResponse);
-                }
-            }
-            return null;
-        } catch (Exception e) {
-            log.error("Error parsing server-sent event: {}", e.getMessage());
+        String json = extractJsonFromSse(eventData);
+        if (json == null) {
             return null;
         }
-    }
-    
-    /**
-     * Parse accumulated SSE data chunks and extract complete SSE events
-     * 
-     * @param accumulatedData accumulated SSE data
-     * @return parsed SendStreamingMessageResponse stream
-     */
-    private Flux<SendStreamingMessageResponse> parseSseChunks(String accumulatedData) {
-        if (StringUtil.isNullOrEmpty(accumulatedData)) {
-            return Flux.empty();
+        JsonNode response = JsonUtil.fromJson(json);
+        checkError(response);
+        if (response == null || response.get("result") == null || response.get("result").isNull()) {
+            return null;
         }
-        
-        List<SendStreamingMessageResponse> events = new ArrayList<>();
-        
-        // handle the sse single message
-        SendStreamingMessageResponse response = parseServerSentEvent(accumulatedData);
-        if (response != null) {
-            events.add(response);
-        }
-        
-        return Flux.fromIterable(events);
+        return streamingEvent(response.get("result"));
     }
 
-    /**
-     * Extract JSON content from SSE format data
-     * 
-     * @param sseData SSE format data
-     * @return extracted JSON string
-     */
-    private String extractJsonFromSSE(String sseData) {
-        if (StringUtil.isNullOrEmpty(sseData)) {
-            return null;
+    private StreamingEventKind streamingEvent(JsonNode node) {
+        if (node.has("task")) {
+            return SdkModelCodec.fromJson(node.get("task").toString(), Task.class);
         }
-        
-        // Split SSE data by lines
-        String[] lines = sseData.split("\n");
-        StringBuilder jsonData = new StringBuilder();
-        
-        for (String line : lines) {
-            line = line.trim();
-            // Process data: lines
-            if (line.startsWith("data:")) {
-                String dataContent = line.substring(5); // Remove "data:" prefix
-                jsonData.append(dataContent);
-            }
-            // Ignore other SSE fields like event:, id:, retry:, etc.
+        if (node.has("message")) {
+            return SdkModelCodec.fromJson(node.get("message").toString(), Message.class);
         }
-        
-        String result = jsonData.toString().trim();
-        return result.isEmpty() ? null : result;
+        if (node.has("artifactUpdate")) {
+            return SdkModelCodec.fromJson(node.get("artifactUpdate").toString(), TaskArtifactUpdateEvent.class);
+        }
+        if (node.has("statusUpdate")) {
+            return SdkModelCodec.fromJson(node.get("statusUpdate").toString(), TaskStatusUpdateEvent.class);
+        }
+        if (node.has("id") && node.has("status")) {
+            return SdkModelCodec.fromJson(node.toString(), Task.class);
+        }
+        throw new IllegalArgumentException("unsupported A2A streaming result");
     }
+
+    private Event event(JsonNode result) {
+        return streamingEvent(result);
+    }
+
+    private InternalError internalError(String message, Throwable cause) {
+        InternalError error = new InternalError(message);
+        if (cause != null) {
+            error.initCause(cause);
+        }
+        return error;
+    }
+
+    private final class SseFrameDecoder {
+
+        private final StringBuilder pending = new StringBuilder();
+
+        private List<StreamingEventKind> accept(String chunk) {
+            if (StringUtil.isNullOrEmpty(chunk)) {
+                return List.of();
+            }
+            pending.append(chunk);
+            List<StreamingEventKind> events = new ArrayList<>();
+            int boundary;
+            while ((boundary = frameBoundary()) >= 0) {
+                String frame = pending.substring(0, boundary);
+                int boundaryLength = pending.charAt(boundary) == '\r' ? 4 : 2;
+                pending.delete(0, boundary + boundaryLength);
+                StreamingEventKind event = parseServerSentEvent(frame);
+                if (event != null) {
+                    events.add(event);
+                }
+            }
+            return events;
+        }
+
+        private List<StreamingEventKind> finish() {
+            if (pending.isEmpty()) {
+                return List.of();
+            }
+            String frame = pending.toString();
+            pending.setLength(0);
+            StreamingEventKind event = parseServerSentEvent(frame);
+            return event == null ? List.of() : List.of(event);
+        }
+
+        private int frameBoundary() {
+            int lfBoundary = pending.indexOf("\n\n");
+            int crlfBoundary = pending.indexOf("\r\n\r\n");
+            if (lfBoundary < 0) {
+                return crlfBoundary;
+            }
+            if (crlfBoundary < 0) {
+                return lfBoundary;
+            }
+            return Math.min(lfBoundary, crlfBoundary);
+        }
+
+    }
+
+    private static void checkError(JsonNode response) throws A2AError {
+        if (response == null || !response.has("error") || response.get("error").isNull()) {
+            return;
+        }
+        JsonNode error = response.get("error");
+        int code = error.path("code").asInt(A2AErrorCodes.INTERNAL.code());
+        String message = error.path("message").asText("A2A request failed");
+        Map<String, Object> details = details(error.get("data"));
+        throw sdkError(code, message, details);
+    }
+
+    private static A2AError sdkError(int code, String message, Map<String, Object> details) {
+        A2AErrorCodes known = A2AErrorCodes.fromCode(code);
+        if (known == null) {
+            return new A2AError(code, message, details);
+        }
+        return switch (known) {
+            case INVALID_PARAMS -> new InvalidParamsError(code, message, details);
+            case METHOD_NOT_FOUND -> new MethodNotFoundError(code, message, details);
+            case INVALID_REQUEST -> new InvalidRequestError(code, message, details);
+            case JSON_PARSE -> new JSONParseError(code, message, details);
+            case INTERNAL -> new InternalError(code, message, details);
+            case TASK_NOT_FOUND -> new TaskNotFoundError(message, details);
+            default -> new A2AError(code, message, details);
+        };
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> details(JsonNode data) {
+        if (data == null || data.isNull()) {
+            return Map.of();
+        }
+        if (data.isObject()) {
+            Map<String, Object> result = JsonUtil.fromJson(data.toString(), Map.class);
+            return result == null ? Map.of() : result;
+        }
+        return Map.of("data", data.asText());
+    }
+
+    private String endpoint() {
+        if (agentCard == null || agentCard.url() == null) {
+            throw new IllegalStateException("AgentCard has no url");
+        }
+        return agentCard.url();
+    }
+
+    private String cardName() {
+        return agentCard == null ? "unknown" : agentCard.name();
+    }
+
+    private String extractJsonFromSse(String sseData) {
+        StringBuilder json = new StringBuilder();
+        for (String line : sseData.split("\\n")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith("data:")) {
+                json.append(trimmed.substring(5).trim());
+            }
+        }
+        return json.isEmpty() ? null : json.toString();
+    }
+
 }

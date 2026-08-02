@@ -91,6 +91,7 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             }
             Map<String, Object> message = mapValue(params, "message");
             Map<String, Object> configuration = mapValue(params, "configuration");
+            validateSdkRequest(operation, message, configuration, paramsMap);
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("jsonRpcId", objectMapper.convertValue(request.get("id"), Object.class));
             metadata.put("jsonRpcMethod", request.get("method").asText());
@@ -132,12 +133,18 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             Map<String, Object> params = new LinkedHashMap<>();
             if (command.operation() == GatewayCommand.Operation.SEND_MESSAGE
                     || command.operation() == GatewayCommand.Operation.SEND_STREAMING_MESSAGE) {
-                params.put("message", command.message());
+                if (command.message().containsKey("parts")) {
+                    params.put("message", SdkA2aProtocolCodec.messageMap(command.message()));
+                }
+                else {
+                    params.put("message", command.message());
+                }
             }
             else {
                 params.putAll(command.message());
             }
             if (!command.configuration().isEmpty()) {
+                SdkA2aProtocolCodec.configuration(command.configuration());
                 params.put("configuration", command.configuration());
             }
             if (isTaskOperation(command.operation())) {
@@ -212,6 +219,7 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
                 return Flux.just(new GatewayEvent(GatewayEvent.Type.ERROR, "unknown", null, body, Instant.now(),
                         metadata));
             }
+            validateSdkResponse(body);
             JsonRpcTaskReference reference = extractTaskReference(body);
             if (reference.taskId() != null) {
                 metadata.put("upstreamTaskId", reference.taskId());
@@ -266,6 +274,28 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             contextId = text(result, "contextId");
         }
         return new JsonRpcTaskReference(taskId, contextId);
+    }
+
+    private void validateSdkRequest(GatewayCommand.Operation operation, Map<String, Object> message,
+            Map<String, Object> configuration, Map<String, Object> params) {
+        if (operation == GatewayCommand.Operation.SEND_MESSAGE
+                || operation == GatewayCommand.Operation.SEND_STREAMING_MESSAGE) {
+            SdkA2aProtocolCodec.message(message);
+            if (!configuration.isEmpty()) {
+                SdkA2aProtocolCodec.configuration(configuration);
+            }
+        }
+        else if (operation == GatewayCommand.Operation.GET_TASK) {
+            SdkA2aProtocolCodec.taskQueryParams(params);
+        }
+        else if (operation == GatewayCommand.Operation.CANCEL_TASK
+                || operation == GatewayCommand.Operation.SUBSCRIBE_TO_TASK) {
+            SdkA2aProtocolCodec.taskIdParams(params);
+        }
+    }
+
+    private void validateSdkResponse(JsonNode body) {
+        SdkA2aProtocolCodec.validateResponse(body, objectMapper);
     }
 
     private void rewrite(JsonNode node, String upstreamTaskId, String upstreamContextId,

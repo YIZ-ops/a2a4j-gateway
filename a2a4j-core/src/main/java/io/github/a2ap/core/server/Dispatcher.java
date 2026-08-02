@@ -16,32 +16,33 @@
 
 package io.github.a2ap.core.server;
 
-import io.github.a2ap.core.jsonrpc.JSONRPCRequest;
-import io.github.a2ap.core.jsonrpc.JSONRPCResponse;
+import java.util.Map;
 import reactor.core.publisher.Flux;
 
 /**
- * Interface for dispatching JSON-RPC requests to appropriate handlers.
- * The Dispatcher is responsible for routing incoming JSON-RPC requests to the
- * correct method handlers and managing both synchronous and streaming responses.
+ * Protocol-boundary dispatcher for JSON-RPC requests.
+ *
+ * <p>The envelope is deliberately represented as a map at this boundary. Core
+ * domain contracts use the official A2A SDK types; JSON-RPC request/response
+ * DTOs remain implementation details of the transport adapter.</p>
  */
 public interface Dispatcher {
 
     /**
      * Dispatches a JSON-RPC request for synchronous processing.
      *
-     * @param request The JSON-RPC request to be processed
-     * @return A JSON-RPC response containing the result or error
+     * @param request The decoded JSON-RPC request envelope
+     * @return A JSON-RPC response envelope containing the result or error
      */
-    JSONRPCResponse dispatch(JSONRPCRequest request);
+    Map<String, Object> dispatch(Map<String, Object> request);
 
     /**
      * Dispatches a JSON-RPC request for streaming/asynchronous processing.
      * This method is used for operations that return multiple responses over time,
      * such as streaming updates or event subscriptions.
      *
-     * @param request The JSON-RPC request to be processed
-     * @return A Flux of JSON-RPC responses for streaming results
+     * @param request The decoded JSON-RPC request envelope
+     * @return A Flux of JSON-RPC response envelopes for streaming results
      */
-    Flux<JSONRPCResponse> dispatchStream(JSONRPCRequest request);
+    Flux<Map<String, Object>> dispatchStream(Map<String, Object> request);
 }

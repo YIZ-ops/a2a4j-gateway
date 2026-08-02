@@ -6,123 +6,95 @@
  * You may obtain a copy of the License at
  *
  *     https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 
 package io.github.a2ap.core.client;
 
-import io.github.a2ap.core.model.AgentCard;
-import io.github.a2ap.core.model.AgentCapabilities;
-import io.github.a2ap.core.model.AgentSkill;
-import org.junit.jupiter.api.Test;
-
-import java.util.Arrays;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+import org.a2aproject.sdk.spec.AgentCapabilities;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentInterface;
+import org.a2aproject.sdk.spec.AgentSkill;
+import org.junit.jupiter.api.Test;
 
 class CardResolverTest {
 
     @Test
-    void testMockCardResolver() {
-        MockCardResolver resolver = new MockCardResolver();
-        
-        AgentCard card = resolver.resolveCard();
-        
+    void resolvesOfficialSdkCard() {
+        AgentCard card = new MockCardResolver().resolveCard();
         assertNotNull(card);
-        assertEquals("mock-agent", card.getId());
-        assertEquals("Mock Agent", card.getName());
-        assertEquals("A mock agent for testing", card.getDescription());
-        assertEquals("https://mock.com/agent", card.getUrl());
-        assertEquals("1.0.0", card.getVersion());
-        assertNotNull(card.getCapabilities());
-        assertNotNull(card.getSkills());
+        assertEquals("Mock Agent", card.name());
+        assertEquals("https://mock.com/agent", card.url());
+        assertTrue(card.capabilities().streaming());
+        assertEquals("mock-skill", card.skills().get(0).id());
     }
 
     @Test
-    void testCardResolverWithCustomData() {
-        CustomCardResolver resolver = new CustomCardResolver("custom-id", "Custom Agent");
-        
-        AgentCard card = resolver.resolveCard();
-        
-        assertNotNull(card);
-        assertEquals("custom-id", card.getId());
-        assertEquals("Custom Agent", card.getName());
-        assertEquals("https://custom.com/agent", card.getUrl());
-        assertEquals("2.0.0", card.getVersion());
+    void resolvesCustomOfficialSdkCard() {
+        AgentCard card = new CustomCardResolver("custom-id", "Custom Agent").resolveCard();
+        assertEquals("Custom Agent", card.name());
+        assertEquals("2.0.0", card.version());
     }
 
     @Test
-    void testCardResolverWithNullData() {
-        NullCardResolver resolver = new NullCardResolver();
-        
-        AgentCard card = resolver.resolveCard();
-        
-        assertNull(card);
+    void allowsResolverToReturnNull() {
+        assertNull(new NullCardResolver().resolveCard());
     }
 
-    // Mock implementation for testing
-    static class MockCardResolver implements CardResolver {
+    private static final class MockCardResolver implements CardResolver {
+
         @Override
         public AgentCard resolveCard() {
-            AgentCard card = new AgentCard();
-            card.setId("mock-agent");
-            card.setName("Mock Agent");
-            card.setDescription("A mock agent for testing");
-            card.setUrl("https://mock.com/agent");
-            card.setVersion("1.0.0");
-            
-            AgentCapabilities capabilities = new AgentCapabilities();
-            capabilities.setStreaming(true);
-            card.setCapabilities(capabilities);
-            
-            AgentSkill skill = new AgentSkill();
-            skill.setName("mock-skill");
-            skill.setDescription("A mock skill");
-            card.setSkills(Arrays.asList(skill));
-            
-            return card;
+            return AgentCard.builder().name("Mock Agent").description("A mock agent for testing")
+                    .url("https://mock.com/agent").version("1.0.0")
+                    .capabilities(new AgentCapabilities(true, false, false, List.of()))
+                    .defaultInputModes(List.of("text")).defaultOutputModes(List.of("text"))
+                    .supportedInterfaces(List.of(new AgentInterface("JSONRPC", "https://mock.com/agent", null, "1.0")))
+                    .skills(List.of(AgentSkill.builder().id("mock-skill").name("Mock skill")
+                            .description("A mock skill").tags(List.of()).examples(List.of())
+                            .inputModes(List.of("text")).outputModes(List.of("text")).build()))
+                    .build();
         }
+
     }
 
-    // Custom implementation for testing
-    static class CustomCardResolver implements CardResolver {
+    private static final class CustomCardResolver implements CardResolver {
+
         private final String id;
         private final String name;
 
-        public CustomCardResolver(String id, String name) {
+        private CustomCardResolver(String id, String name) {
             this.id = id;
             this.name = name;
         }
 
         @Override
         public AgentCard resolveCard() {
-            AgentCard card = new AgentCard();
-            card.setId(id);
-            card.setName(name);
-            card.setDescription("A custom agent for testing");
-            card.setUrl("https://custom.com/agent");
-            card.setVersion("2.0.0");
-            
-            AgentCapabilities capabilities = new AgentCapabilities();
-            capabilities.setStreaming(false);
-            card.setCapabilities(capabilities);
-            
-            return card;
+            return AgentCard.builder().name(name).description("A custom agent for testing")
+                    .url("https://custom.com/agent").version("2.0.0")
+                    .capabilities(new AgentCapabilities(false, false, false, List.of()))
+                    .defaultInputModes(List.of("text")).defaultOutputModes(List.of("text"))
+                    .supportedInterfaces(List.of(new AgentInterface("JSONRPC", "https://custom.com/agent", null, "1.0")))
+                    .skills(List.of(AgentSkill.builder().id(id).name(name).description("A custom skill")
+                            .tags(List.of()).examples(List.of())
+                            .inputModes(List.of("text")).outputModes(List.of("text")).build()))
+                    .build();
         }
+
     }
 
-    // Null implementation for testing
-    static class NullCardResolver implements CardResolver {
+    private static final class NullCardResolver implements CardResolver {
+
         @Override
         public AgentCard resolveCard() {
             return null;
         }
+
     }
-} 
+
+}

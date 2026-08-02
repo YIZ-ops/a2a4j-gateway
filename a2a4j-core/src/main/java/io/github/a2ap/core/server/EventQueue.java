@@ -16,7 +16,7 @@
 
 package io.github.a2ap.core.server;
 
-import io.github.a2ap.core.model.SendStreamingMessageResponse;
+import org.a2aproject.sdk.spec.StreamingEventKind;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -37,7 +37,7 @@ public class EventQueue {
 
     private static final Logger log = LoggerFactory.getLogger(EventQueue.class);
 
-    private final Sinks.Many<SendStreamingMessageResponse> sink;
+    private final Sinks.Many<StreamingEventKind> sink;
     private final List<EventQueue> children = new CopyOnWriteArrayList<>();
     private final AtomicBoolean isClosed = new AtomicBoolean(false);
 
@@ -51,7 +51,7 @@ public class EventQueue {
      *
      * @param event The event object to enqueue.
      */
-    public void enqueueEvent(SendStreamingMessageResponse event) {
+    public void enqueueEvent(StreamingEventKind event) {
         if (isClosed.get()) {
             log.warn("Queue is closed. Event will not be enqueued.");
             return;
@@ -75,7 +75,7 @@ public class EventQueue {
      *
      * @return A Flux of events from the queue.
      */
-    public Flux<SendStreamingMessageResponse> asFlux() {
+    public Flux<StreamingEventKind> asFlux() {
         return sink.asFlux();
     }
 

@@ -16,10 +16,6 @@
 
 package io.github.a2ap.server.hello.world.controller;
 
-import io.github.a2ap.core.jsonrpc.JSONRPCRequest;
-import io.github.a2ap.core.jsonrpc.JSONRPCResponse;
-import io.github.a2ap.core.model.AgentCard;
-import io.github.a2ap.core.model.AgentSkill;
 import io.github.a2ap.core.server.A2AServer;
 import io.github.a2ap.core.server.Dispatcher;
 import org.springframework.http.HttpHeaders;
@@ -34,7 +30,11 @@ import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
 
-import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentSkill;
 
 /**
  * Spring Boot REST Controller that implements the A2A protocol endpoints.
@@ -56,8 +56,7 @@ import java.util.Collections;
  * routes requests to appropriate handlers based on the method name.
  *
  * @see io.github.a2ap.core.server.Dispatcher
- * @see io.github.a2ap.core.jsonrpc.JSONRPCRequest
- * @see io.github.a2ap.core.model.AgentCard
+ * @see org.a2aproject.sdk.spec.AgentCard
  */
 @RestController
 public class A2AServerController {
@@ -117,7 +116,7 @@ public class A2AServerController {
      * <p>
      * This endpoint provides a potentially more detailed version of the Agent Card
      * after the client has authenticated. This endpoint is available only if
-     * {@code AgentCard.supportsAuthenticatedExtendedCard} is {@code true}.
+     * {@code AgentCard.capabilities().extendedAgentCard()} is {@code true}.
      *
      * <p>
      * The client MUST authenticate the request using one of the schemes declared
@@ -151,18 +150,21 @@ public class A2AServerController {
 
         AgentCard card = a2aServer.getAuthenticatedExtendedCard();
         // Add extended content example: add a skill only if it doesn't already exist
-        if (card != null && card.getSkills() != null) {
-            boolean hasExtendedSkill = card.getSkills().stream().anyMatch(skill -> "extended-skill-id".equals(skill.getId()));
+        if (card != null && card.skills() != null) {
+            boolean hasExtendedSkill = card.skills().stream().anyMatch(skill -> "extended-skill-id".equals(skill.id()));
 
             if (!hasExtendedSkill) {
-                card.getSkills().add(new AgentSkill("extended-skill-id", "Extended Skill", "This skill is only visible to authenticated users.",
-                        Collections.emptyList(), Collections.emptyList(), Collections.emptyList(), Collections.emptyList()));
+                ArrayList<AgentSkill> skills = new ArrayList<>(card.skills());
+                skills.add(AgentSkill.builder().id("extended-skill-id").name("Extended Skill")
+                        .description("This skill is only visible to authenticated users.")
+                        .tags(List.of()).examples(List.of()).inputModes(List.of()).outputModes(List.of()).build());
+                card = AgentCard.builder(card).skills(skills).build();
             }
         }
         if (card == null) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
         }
-        if (!card.isSupportsAuthenticatedExtendedCard()) {
+        if (card.capabilities() == null || !card.capabilities().extendedAgentCard()) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok(card);
@@ -206,7 +208,7 @@ public class A2AServerController {
      * @return ResponseEntity containing the JSON-RPC response
      */
     @PostMapping(value = "/a2a/server", produces = MediaType.APPLICATION_JSON_VALUE)
-    public ResponseEntity<JSONRPCResponse> handleA2ARequestTask(@RequestBody JSONRPCRequest request) {
+    public ResponseEntity<Map<String, Object>> handleA2ARequestTask(@RequestBody Map<String, Object> request) {
         return ResponseEntity.ok(a2aDispatch.dispatch(request));
     }
 
@@ -266,8 +268,10 @@ public class A2AServerController {
      * @return Flux of ServerSentEvent containing JSON-RPC responses
      */
     @PostMapping(value = "/a2a/server", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<JSONRPCResponse>> handleA2ARequestTaskSubscribe(@RequestBody JSONRPCRequest request) {
-        return a2aDispatch.dispatchStream(request).map(event -> ServerSentEvent.<JSONRPCResponse>builder().data(event).event("task-update").build());
+    public Flux<ServerSentEvent<Map<String, Object>>> handleA2ARequestTaskSubscribe(
+            @RequestBody Map<String, Object> request) {
+        return a2aDispatch.dispatchStream(request)
+                .map(event -> ServerSentEvent.<Map<String, Object>>builder().data(event).event("task-update").build());
     }
 
 }

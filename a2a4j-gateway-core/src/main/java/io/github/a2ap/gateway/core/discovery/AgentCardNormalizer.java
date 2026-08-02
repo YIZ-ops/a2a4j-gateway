@@ -16,22 +16,21 @@
 
 package io.github.a2ap.gateway.core.discovery;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.github.a2ap.core.protocol.v1.A2AProtocolV1Validator;
 import io.github.a2ap.gateway.api.model.AgentDefinition;
 import io.github.a2ap.gateway.api.model.AgentInstance;
 import io.github.a2ap.gateway.api.model.AgentInstanceRegistration;
 import io.github.a2ap.gateway.api.model.AgentInterface;
 import io.github.a2ap.gateway.api.model.AgentRegistration;
 import io.github.a2ap.gateway.api.model.AgentSkillDefinition;
+import org.a2aproject.sdk.jsonrpc.common.json.JsonUtil;
+import org.a2aproject.sdk.spec.AgentCard;
+import org.a2aproject.sdk.spec.AgentSkill;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
-import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,19 +39,16 @@ import java.util.Objects;
 /** Converts validated A2A 1.0 Agent Cards into gateway-owned immutable snapshots. */
 public final class AgentCardNormalizer {
 
-    private final ObjectMapper objectMapper;
-
     private final AgentCardUrlPolicy urlPolicy;
 
-    /** Creates a normalizer using the supplied JSON mapper and URL policy. */
-    public AgentCardNormalizer(ObjectMapper objectMapper, AgentCardUrlPolicy urlPolicy) {
-        this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
+    /** Creates a normalizer using the official SDK JSON codec and the supplied URL policy. */
+    public AgentCardNormalizer(AgentCardUrlPolicy urlPolicy) {
         this.urlPolicy = Objects.requireNonNull(urlPolicy, "urlPolicy");
     }
 
-    /** Creates a normalizer with the default mapper and production URL policy. */
+    /** Creates a normalizer with the official SDK codec and production URL policy. */
     public AgentCardNormalizer() {
-        this(new ObjectMapper(), AgentCardUrlPolicy.productionDefault());
+        this(AgentCardUrlPolicy.productionDefault());
     }
 
     /**
@@ -70,7 +66,7 @@ public final class AgentCardNormalizer {
             throw new IllegalArgumentException("cardJsonByInstanceId must not be null");
         }
         Instant effectiveCheckedAt = checkedAt == null ? Instant.now() : checkedAt;
-        Map<String, JsonNode> cards = new LinkedHashMap<>();
+        Map<String, AgentCard> cards = new LinkedHashMap<>();
         for (AgentInstanceRegistration instance : registration.instances()) {
             String cardJson = cardJsonByInstanceId.get(instance.instanceId());
             if (cardJson == null) {
@@ -78,8 +74,7 @@ public final class AgentCardNormalizer {
             }
             urlPolicy.validateConfiguredUrl(instance.cardUrl());
             try {
-                JsonNode card = objectMapper.readTree(cardJson);
-                A2AProtocolV1Validator.validateAgentCard(card);
+                AgentCard card = JsonUtil.fromJson(cardJson, AgentCard.class);
                 cards.put(instance.instanceId(), card);
             }
             catch (Exception ex) {
@@ -90,16 +85,16 @@ public final class AgentCardNormalizer {
             }
         }
 
-        JsonNode firstCard = cards.values().iterator().next();
+        AgentCard firstCard = cards.values().iterator().next();
         String displayName = registration.configuredDisplayName();
         if (displayName.isBlank()) {
-            displayName = firstCard.get("name").asText();
+            displayName = firstCard.name();
         }
-        List<AgentSkillDefinition> skills = normalizeSkills(firstCard.get("skills"));
+        List<AgentSkillDefinition> skills = normalizeSkills(firstCard.skills());
         List<AgentInstance> instances = new ArrayList<>();
         for (AgentInstanceRegistration configured : registration.instances()) {
-            JsonNode card = cards.get(configured.instanceId());
-            List<AgentInterface> interfaces = normalizeInterfaces(configured.instanceId(), card.get("supportedInterfaces"),
+            AgentCard card = cards.get(configured.instanceId());
+            List<AgentInterface> interfaces = normalizeInterfaces(configured.instanceId(), card.supportedInterfaces(),
                     registration);
             instances.add(new AgentInstance(configured.instanceId(), configured.cardUrl(), interfaces,
                     configured.weight(), configured.credentialRef(), AgentInstance.HealthStatus.HEALTHY,
@@ -109,20 +104,20 @@ public final class AgentCardNormalizer {
                 registration.enabled(), skills, registration.routingLabels(), registration.protocolPolicy(), instances);
     }
 
-    private List<AgentInterface> normalizeInterfaces(String instanceId, JsonNode interfaces,
+    private List<AgentInterface> normalizeInterfaces(String instanceId,
+            List<org.a2aproject.sdk.spec.AgentInterface> interfaces,
             AgentRegistration registration) {
         List<AgentInterface> normalized = new ArrayList<>();
-        Iterator<JsonNode> iterator = interfaces.elements();
-        while (iterator.hasNext()) {
-            JsonNode value = iterator.next();
-            String binding = value.get("protocolBinding").asText();
-            String version = value.get("protocolVersion").asText();
+        for (org.a2aproject.sdk.spec.AgentInterface value : interfaces) {
+            String binding = value.protocolBinding();
+            String version = value.protocolVersion();
             if (!registration.protocolPolicy().allows(version, binding)) {
                 throw new IllegalArgumentException("Agent Card interface is outside configured protocol policy");
             }
-            String endpoint = value.get("url").asText();
+            String endpoint = value.url();
             urlPolicy.validateConfiguredUrl(endpoint);
-            normalized.add(new AgentInterface(instanceId + "-" + binding, endpoint, binding, version, null));
+            normalized.add(new AgentInterface(instanceId + "-" + binding, endpoint, binding, version,
+                    value.tenant()));
         }
         if (normalized.isEmpty()) {
             throw new IllegalArgumentException("Agent Card must expose at least one supported interface");
@@ -130,25 +125,13 @@ public final class AgentCardNormalizer {
         return normalized;
     }
 
-    private List<AgentSkillDefinition> normalizeSkills(JsonNode skills) {
+    private List<AgentSkillDefinition> normalizeSkills(List<AgentSkill> skills) {
         List<AgentSkillDefinition> normalized = new ArrayList<>();
-        for (JsonNode skill : skills) {
-            normalized.add(new AgentSkillDefinition(skill.get("id").asText(), skill.get("name").asText(),
-                    skill.get("description").asText(), textArray(skill.get("tags")),
-                    textArray(skill.get("inputModes")), textArray(skill.get("outputModes"))));
+        for (AgentSkill skill : skills) {
+            normalized.add(new AgentSkillDefinition(skill.id(), skill.name(), skill.description(), skill.tags(),
+                    skill.inputModes(), skill.outputModes()));
         }
         return normalized;
-    }
-
-    private List<String> textArray(JsonNode values) {
-        if (values == null || !values.isArray()) {
-            return List.of();
-        }
-        List<String> result = new ArrayList<>();
-        for (JsonNode value : values) {
-            result.add(value.asText());
-        }
-        return result;
     }
 
     private static String sha256(String value) {

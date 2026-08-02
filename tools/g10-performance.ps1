@@ -146,12 +146,12 @@ try {
     Wait-Http "http://127.0.0.1:$GatewayPort/actuator/health"
     Start-Sleep -Seconds 2
 
-    $payload = '{"message":{"role":"ROLE_USER","parts":[{"text":"g10-performance"}]}}'
+    $payload = '{"message":{"role":"ROLE_USER","messageId":"g10-performance-message","parts":[{"text":"g10-performance"}]}}'
     $gatewayLatencies = [GatewayPerfProbe]::Run("http://127.0.0.1:$GatewayPort/message:send", $apiKey, $payload,
         $SequentialRequests, 1)
     $concurrentLatencies = [GatewayPerfProbe]::Run("http://127.0.0.1:$GatewayPort/message:send", $apiKey, $payload,
         $ConcurrentRequests, $Concurrency)
-    $upstreamPayload = '{"jsonrpc":"2.0","id":"g10","method":"SendMessage","params":{"message":{"role":"ROLE_USER","parts":[{"text":"g10-upstream"}]}}}'
+    $upstreamPayload = '{"jsonrpc":"2.0","id":"g10","method":"SendMessage","params":{"message":{"messageId":"g10-upstream-message","role":"ROLE_USER","parts":[{"text":"g10-upstream"}]}}}'
     $upstreamLatencies = [GatewayPerfProbe]::Run("http://127.0.0.1:$AgentPortA/a2a/server", '', $upstreamPayload,
         $SequentialRequests, 1)
 

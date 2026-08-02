@@ -20,12 +20,6 @@ import io.github.a2ap.core.client.A2AClient;
 import io.github.a2ap.core.client.CardResolver;
 import io.github.a2ap.core.client.impl.DefaultA2AClient;
 import io.github.a2ap.core.client.impl.HttpCardResolver;
-import io.github.a2ap.core.exception.A2AError;
-import io.github.a2ap.core.model.Message;
-import io.github.a2ap.core.model.MessageSendParams;
-import io.github.a2ap.core.model.SendMessageResponse;
-import io.github.a2ap.core.model.SendStreamingMessageResponse;
-import io.github.a2ap.core.model.TextPart;
 import jakarta.annotation.PostConstruct;
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +34,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import reactor.core.publisher.Flux;
+import org.a2aproject.sdk.spec.A2AError;
+import org.a2aproject.sdk.spec.Event;
+import org.a2aproject.sdk.spec.Message;
+import org.a2aproject.sdk.spec.MessageSendParams;
+import org.a2aproject.sdk.spec.StreamingEventKind;
+import org.a2aproject.sdk.spec.TextPart;
 
 /**
  * A2A Client Controller for sending messages to an A2A server.
@@ -78,13 +78,14 @@ public class A2aClientController {
      * from the server.
      */
     @GetMapping("/send")
-    public ResponseEntity<SendMessageResponse> sendMessage(@RequestParam String message) {
-        Message messageParam = Message.builder().messageId(UUID.randomUUID().toString()).role("user").parts(List.of(TextPart.builder().text(message).build())).build();
+    public ResponseEntity<Event> sendMessage(@RequestParam String message) {
+        Message messageParam = Message.builder().messageId(UUID.randomUUID().toString())
+                .role(Message.Role.ROLE_USER).parts(List.of(new TextPart(message))).build();
         MessageSendParams params = MessageSendParams.builder()
                 .message(messageParam)
                 .build();
         try {
-            SendMessageResponse response = this.a2AClient.sendMessage(params);
+            Event response = this.a2AClient.sendMessage(params);
             return ResponseEntity.ok(response);
         } catch (A2AError a2AError) {
             log.error(a2AError.getMessage(), a2AError);
@@ -101,8 +102,9 @@ public class A2aClientController {
      * from the server.
      */
     @GetMapping(path = "/stream/send", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<ServerSentEvent<SendStreamingMessageResponse>> sendStreamMessage(@RequestParam String message) {
-        Message messageParam = Message.builder().messageId(UUID.randomUUID().toString()).role("user").parts(List.of(TextPart.builder().text(message).build())).build();
+    public Flux<ServerSentEvent<StreamingEventKind>> sendStreamMessage(@RequestParam String message) {
+        Message messageParam = Message.builder().messageId(UUID.randomUUID().toString())
+                .role(Message.Role.ROLE_USER).parts(List.of(new TextPart(message))).build();
         MessageSendParams params = MessageSendParams.builder()
                 .message(messageParam)
                 .build();

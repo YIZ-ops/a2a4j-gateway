@@ -92,6 +92,23 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
             String contextId = firstText(text(request, "contextId"), text(request.get("message"), "contextId"));
             Map<String, Object> message = mapValue(request, "message");
             Map<String, Object> configuration = mapValue(request, "configuration");
+            Map<String, Object> taskParams = objectMapper.convertValue(request, Map.class);
+            if (taskId != null) {
+                taskParams.putIfAbsent("id", taskId);
+            }
+            if (isMessageOperation(operation)) {
+                SdkA2aProtocolCodec.message(message);
+                if (!configuration.isEmpty()) {
+                    SdkA2aProtocolCodec.configuration(configuration);
+                }
+            }
+            else if (operation == GatewayCommand.Operation.GET_TASK) {
+                SdkA2aProtocolCodec.taskQueryParams(taskParams);
+            }
+            else if (operation == GatewayCommand.Operation.CANCEL_TASK
+                    || operation == GatewayCommand.Operation.SUBSCRIBE_TO_TASK) {
+                SdkA2aProtocolCodec.taskIdParams(taskParams);
+            }
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("httpOperation", operation.name());
             metadata.put("inboundRequestId", exchange.requestId());
@@ -141,8 +158,10 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
                     path = command.operation() == GatewayCommand.Operation.SEND_MESSAGE
                             ? "message:send" : "message:stream";
                     streaming = command.operation() == GatewayCommand.Operation.SEND_STREAMING_MESSAGE;
-                    request.put("message", command.message());
+                    request.put("message", command.message().containsKey("parts")
+                            ? SdkA2aProtocolCodec.messageMap(command.message()) : command.message());
                     if (!command.configuration().isEmpty()) {
+                        SdkA2aProtocolCodec.configuration(command.configuration());
                         request.put("configuration", command.configuration());
                     }
                     if (command.gatewayContextId() != null && !command.gatewayContextId().isBlank()) {
@@ -257,6 +276,7 @@ public final class HttpJsonProtocolAdapter implements ProtocolAdapter {
                 return Flux.just(new GatewayEvent(GatewayEvent.Type.ERROR, "unknown", null, body, Instant.now(),
                         metadata));
             }
+            SdkA2aProtocolCodec.validateResponse(body, objectMapper);
             JsonRpcTaskReference reference = extractTaskReference(body);
             if (reference.taskId() != null) {
                 metadata.put("upstreamTaskId", reference.taskId());

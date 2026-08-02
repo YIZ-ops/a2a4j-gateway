@@ -50,7 +50,7 @@ try {
         try {
             $cardA = Invoke-RestMethod "$agentUrlA/.well-known/agent-card.json" -TimeoutSec 2
             $cardB = Invoke-RestMethod "$agentUrlB/.well-known/agent-card.json" -TimeoutSec 2
-            if ($cardA.id -eq 'echo-a' -and $cardB.id -eq 'echo-b') {
+            if ($cardA.name -eq 'Echo Agent A' -and $cardB.name -eq 'Echo Agent B') {
                 $agentsReady = $true
                 break
             }
@@ -98,7 +98,7 @@ try {
     }
     Write-Output ("gateway health=" + ($health | ConvertTo-Json -Compress))
     $probeBody = Join-Path $logRoot 'gateway-probe.json'
-    Set-Content -LiteralPath $probeBody -Value '{"message":{"role":"ROLE_USER","parts":[{"text":"probe"}]}}' -NoNewline
+    Set-Content -LiteralPath $probeBody -Value '{"message":{"role":"ROLE_USER","messageId":"smoke-probe","parts":[{"text":"probe"}]}}' -NoNewline
     $probeOutput = Join-Path $logRoot 'gateway-probe.out'
     $unauthHeaderFile = Join-Path $logRoot 'gateway-unauth.headers'
     $unauthStatus = (& curl.exe -sS --max-time 10 -o $probeOutput -w '%{http_code}' -X POST `
@@ -132,7 +132,7 @@ try {
         throw "Agent catalog probes failed: list=$catalogStatus detail=$detailStatus card=$cardStatus bodyLength=$($catalogBody.Length)"
     }
     Write-Output "agent-catalog list=$catalogStatus detail=$detailStatus card=$cardStatus"
-    $body = '{"message":{"role":"ROLE_USER","parts":[{"text":"hello from smoke test"}]}}'
+    $body = '{"message":{"role":"ROLE_USER","messageId":"smoke-http-message","parts":[{"text":"hello from smoke test"}]}}'
     $bodyFile = Join-Path $logRoot 'gateway-request.json'
     Set-Content -LiteralPath $bodyFile -Value $body -NoNewline
     $responseFile = Join-Path $logRoot 'gateway-response.json'
@@ -160,6 +160,9 @@ try {
     try {
         $sendResponse = $responseBody | ConvertFrom-Json -ErrorAction Stop
         $gatewayTaskId = [string]$sendResponse.task.id
+        if ([string]::IsNullOrWhiteSpace($gatewayTaskId)) {
+            $gatewayTaskId = [string]$sendResponse.statusUpdate.taskId
+        }
     }
     catch {
         throw "gateway send response is not a task envelope: $responseBody"
@@ -189,6 +192,9 @@ try {
     try {
         $rpcSendResponse = $rpcSendResponseBody | ConvertFrom-Json -ErrorAction Stop
         $rpcGatewayTaskId = [string]$rpcSendResponse.result.task.id
+        if ([string]::IsNullOrWhiteSpace($rpcGatewayTaskId)) {
+            $rpcGatewayTaskId = [string]$rpcSendResponse.result.statusUpdate.taskId
+        }
     }
     catch {
         throw "gateway JSON-RPC send response is not a task result: $rpcSendResponseBody"

@@ -6,6 +6,7 @@
 
 - [MVP 实施过程与 Backlog](./mvp-backlog.md)：G0-G9 唯一过程入口，集中维护阶段交付、验证记录、验收场景和发布门槛。
 - [架构与详细设计](./architecture.md)：目标、模块边界、接口、数据模型、安全、可观测性和企业级演进设计基线。
+- [A2A Java SDK 领域模型迁移计划](./a2a-java-sdk-domain-model-migration-plan.md)：分批采用官方 SDK 标准模型的范围、门禁、回滚与完成标准。
 - [Gateway 配置指南](./configuration.md)：启动、静态 Agent 注册、路由、安全、超时、健康指标和 MVP 限制。
 - [Gateway API 参考](./api-reference.md)：完整北向 API 清单，包含目录、HTTP+JSON、JSON-RPC、SSE、任务、错误和 Actuator 端点。
 - [故障排查 Runbook](./runbook.md)：按 requestId/traceId、健康状态、路由和上游错误定位问题。
