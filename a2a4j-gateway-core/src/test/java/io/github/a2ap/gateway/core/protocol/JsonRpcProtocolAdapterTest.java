@@ -93,6 +93,19 @@ class JsonRpcProtocolAdapterTest {
     }
 
     @Test
+    void treatsInterruptedTaskStatesAsSubscribableStatusEvents() {
+        String inputRequired = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"statusUpdate\":{"
+                + "\"taskId\":\"up-1\",\"contextId\":\"up-c\","
+                + "\"status\":{\"state\":\"TASK_STATE_INPUT_REQUIRED\"}}}}";
+        String authRequired = inputRequired.replace("INPUT_REQUIRED", "AUTH_REQUIRED");
+
+        assertEquals(GatewayEvent.Type.TASK_STATUS, adapter.decodeResponse(new OutboundResponse(
+                ProtocolDescriptor.jsonRpcStreaming(), 200, inputRequired, Map.of(), true)).blockFirst().type());
+        assertEquals(GatewayEvent.Type.TASK_STATUS, adapter.decodeResponse(new OutboundResponse(
+                ProtocolDescriptor.jsonRpcStreaming(), 200, authRequired, Map.of(), true)).blockFirst().type());
+    }
+
+    @Test
     void extractsAndRewritesTaskIdentifiersWithoutLeakingUpstreamIds() throws Exception {
         String body = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"task\":{"
                 + "\"id\":\"up-1\",\"contextId\":\"up-c\"}}}";

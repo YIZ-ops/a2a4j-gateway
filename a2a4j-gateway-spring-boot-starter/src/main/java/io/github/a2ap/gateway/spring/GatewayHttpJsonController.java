@@ -39,12 +39,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -74,6 +74,8 @@ public final class GatewayHttpJsonController {
 
     private final GatewayMetrics metrics;
 
+    private final GatewayAgentCatalogController catalog;
+
     /** Creates the HTTP+JSON controller. */
     public GatewayHttpJsonController(GatewayForwarder forwarder, HttpJsonProtocolAdapter adapter,
             GatewayProperties properties) {
@@ -89,6 +91,13 @@ public final class GatewayHttpJsonController {
     /** Creates the controller with audit and protocol-error metric sinks. */
     public GatewayHttpJsonController(GatewayForwarder forwarder, HttpJsonProtocolAdapter adapter,
             GatewayProperties properties, GatewayAuditSink auditSink, GatewayMetrics metrics) {
+        this(forwarder, adapter, properties, auditSink, metrics, null);
+    }
+
+    /** Creates the controller with the gateway Card projector used for extended Cards. */
+    public GatewayHttpJsonController(GatewayForwarder forwarder, HttpJsonProtocolAdapter adapter,
+            GatewayProperties properties, GatewayAuditSink auditSink, GatewayMetrics metrics,
+            GatewayAgentCatalogController catalog) {
         this.forwarder = forwarder;
         this.adapter = adapter;
         this.properties = properties;
@@ -96,6 +105,7 @@ public final class GatewayHttpJsonController {
         this.metrics = metrics == null ? GatewayMetrics.noop() : metrics;
         this.objectMapper = new ObjectMapper();
         this.eventEncoder = new GatewayEventSseEncoder(objectMapper);
+        this.catalog = catalog;
     }
 
     /** Sends one non-streaming A2A message. */
@@ -166,6 +176,66 @@ public final class GatewayHttpJsonController {
                         .doOnError(error -> recordAudit(command, null, error, exchange, Instant.now()))));
     }
 
+    /** Creates a push notification configuration for a gateway task. */
+    @PostMapping(value = { "/tasks/{taskId}/pushNotificationConfigs",
+            "/gateway/v1/tasks/{taskId}/pushNotificationConfigs",
+            "/gateway/v1/agents/{agentId}/tasks/{taskId}/pushNotificationConfigs" },
+            consumes = { "application/json", "application/a2a+json" },
+            produces = { "application/json", "application/a2a+json" })
+    public Mono<ResponseEntity<byte[]>> createPush(@PathVariable(required = false) String agentId,
+            @PathVariable String taskId, @RequestBody(required = false) Mono<String> body,
+            ServerWebExchange exchange) {
+        return bodyText(body).flatMap(payload -> dispatch(agentId, taskId,
+                GatewayCommand.Operation.CREATE_TASK_PUSH_NOTIFICATION_CONFIG, payload, exchange));
+    }
+
+    /** Retrieves one push notification configuration for a gateway task. */
+    @GetMapping(value = { "/tasks/{taskId}/pushNotificationConfigs/{configId}",
+            "/gateway/v1/tasks/{taskId}/pushNotificationConfigs/{configId}",
+            "/gateway/v1/agents/{agentId}/tasks/{taskId}/pushNotificationConfigs/{configId}" },
+            produces = { "application/json", "application/a2a+json" })
+    public Mono<ResponseEntity<byte[]>> getPush(@PathVariable(required = false) String agentId,
+            @PathVariable String taskId, @PathVariable String configId, ServerWebExchange exchange) {
+        return dispatch(agentId, taskId, GatewayCommand.Operation.GET_TASK_PUSH_NOTIFICATION_CONFIG,
+                configBody(configId), exchange);
+    }
+
+    /** Lists push notification configurations for a gateway task. */
+    @GetMapping(value = { "/tasks/{taskId}/pushNotificationConfigs",
+            "/gateway/v1/tasks/{taskId}/pushNotificationConfigs",
+            "/gateway/v1/agents/{agentId}/tasks/{taskId}/pushNotificationConfigs" },
+            produces = { "application/json", "application/a2a+json" })
+    public Mono<ResponseEntity<byte[]>> listPush(@PathVariable(required = false) String agentId,
+            @PathVariable String taskId, @RequestParam Map<String, String> query, ServerWebExchange exchange) {
+        try {
+            return dispatch(agentId, taskId, GatewayCommand.Operation.LIST_TASK_PUSH_NOTIFICATION_CONFIGS,
+                    objectMapper.writeValueAsString(query), exchange);
+        }
+        catch (JsonProcessingException ex) {
+            return Mono.error(new GatewayHttpException(400, "INVALID_ARGUMENT", "invalid push notification query"));
+        }
+    }
+
+    /** Deletes one push notification configuration for a gateway task. */
+    @DeleteMapping(value = { "/tasks/{taskId}/pushNotificationConfigs/{configId}",
+            "/gateway/v1/tasks/{taskId}/pushNotificationConfigs/{configId}",
+            "/gateway/v1/agents/{agentId}/tasks/{taskId}/pushNotificationConfigs/{configId}" },
+            produces = { "application/json", "application/a2a+json" })
+    public Mono<ResponseEntity<byte[]>> deletePush(@PathVariable(required = false) String agentId,
+            @PathVariable String taskId, @PathVariable String configId, ServerWebExchange exchange) {
+        return dispatch(agentId, taskId, GatewayCommand.Operation.DELETE_TASK_PUSH_NOTIFICATION_CONFIG,
+                configBody(configId), exchange);
+    }
+
+    /** Retrieves the authenticated extended Agent Card through HTTP+JSON. */
+    @GetMapping(value = { "/extendedAgentCard", "/gateway/v1/extendedAgentCard",
+            "/gateway/v1/agents/{agentId}/extendedAgentCard" },
+            produces = { "application/json", "application/a2a+json" })
+    public Mono<ResponseEntity<byte[]>> extendedCard(@PathVariable(required = false) String agentId,
+            ServerWebExchange exchange) {
+        return dispatch(agentId, null, GatewayCommand.Operation.GET_EXTENDED_AGENT_CARD, "", exchange);
+    }
+
     private Mono<ResponseEntity<byte[]>> dispatch(String agentId, String taskId, GatewayCommand.Operation operation,
             String body, ServerWebExchange exchange) {
         return decode(agentId, taskId, operation, body, exchange)
@@ -173,9 +243,22 @@ public final class GatewayHttpJsonController {
                     Instant started = Instant.now();
                     return forwarder.forward(command, routingContext(exchange))
                             .doOnSuccess(result -> recordAudit(command, result, null, exchange, started))
-                            .doOnError(error -> recordAudit(command, null, error, exchange, started));
-                })
-                .map(this::toResponse);
+                            .doOnError(error -> recordAudit(command, null, error, exchange, started))
+                            .flatMap(result -> projectResponse(result, command, exchange));
+                });
+    }
+
+    private Mono<ResponseEntity<byte[]>> projectResponse(GatewayResult result, GatewayCommand command,
+            ServerWebExchange exchange) {
+        if (catalog == null || command.operation() != GatewayCommand.Operation.GET_EXTENDED_AGENT_CARD) {
+            return Mono.just(toResponse(result));
+        }
+        if (!result.success()) {
+            return Mono.just(toResponse(result));
+        }
+        return catalog.projectExtendedCard(command.targetHint().agentId(), exchange, result.payload())
+                .map(projected -> toResponse(new GatewayResult(true, projected, result.errorCode(), result.metadata())))
+                .onErrorResume(ignored -> Mono.just(toResponse(result)));
     }
 
     private Mono<GatewayCommand> decode(String agentId, String taskId, GatewayCommand.Operation operation, String body,
@@ -231,6 +314,15 @@ public final class GatewayHttpJsonController {
 
     private Mono<String> bodyText(Mono<String> body) {
         return body == null ? Mono.just("") : body.defaultIfEmpty("");
+    }
+
+    private String configBody(String configId) {
+        try {
+            return objectMapper.writeValueAsString(Map.of("id", configId));
+        }
+        catch (JsonProcessingException ex) {
+            throw new GatewayHttpException(400, "INVALID_ARGUMENT", "invalid push notification config id");
+        }
     }
 
     private Mono<PrincipalContext> principal(ServerWebExchange exchange) {
@@ -303,8 +395,7 @@ public final class GatewayHttpJsonController {
     }
 
     private String requestId(ServerWebExchange exchange) {
-        String requestId = exchange.getRequest().getHeaders().getFirst(GatewayHeaders.GATEWAY_REQUEST_ID);
-        return requestId == null || requestId.isBlank() ? UUID.randomUUID().toString() : requestId;
+        return GatewayRequestIdResolver.resolve(exchange);
     }
 
     private Map<String, String> headers(ServerWebExchange exchange) {

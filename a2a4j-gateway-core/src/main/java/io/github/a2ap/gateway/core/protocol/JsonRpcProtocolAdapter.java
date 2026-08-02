@@ -77,19 +77,24 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             JsonNode request = objectMapper.readTree(exchange.body());
             A2AProtocolV1Validator.validateJsonRpcRequest(request);
             String requestedVersion = header(exchange, GatewayHeaders.A2A_VERSION);
-            if (requestedVersion != null && !A2AProtocolV1.VERSION.equals(requestedVersion)) {
-                throw new IllegalArgumentException("unsupported A2A-Version: " + requestedVersion);
+            String negotiatedVersion = requestedVersion == null ? "0.3" : requestedVersion;
+            if (!A2AProtocolV1.VERSION.equals(negotiatedVersion)) {
+                if (requestedVersion != null) {
+                    throw new VersionNotSupportedException(negotiatedVersion);
+                }
             }
             JsonNode params = request.has("params") ? request.get("params") : objectMapper.createObjectNode();
             Map<String, Object> paramsMap = objectMapper.convertValue(params, Map.class);
             GatewayCommand.Operation operation = operation(request.get("method").asText());
             String taskId = header(exchange, GatewayHeaders.GATEWAY_TASK_ID);
-            if (taskId == null && (operation == GatewayCommand.Operation.GET_TASK
-                    || operation == GatewayCommand.Operation.CANCEL_TASK
-                    || operation == GatewayCommand.Operation.SUBSCRIBE_TO_TASK)) {
+            if (taskId == null && isIdOperation(operation)) {
                 taskId = text(params, "id");
             }
             Map<String, Object> message = mapValue(params, "message");
+            if (taskId == null) {
+                taskId = firstText(text(params, "taskId"), textValue(message.get("taskId")));
+            }
+            String contextId = firstText(text(params, "contextId"), textValue(message.get("contextId")));
             Map<String, Object> configuration = mapValue(params, "configuration");
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("jsonRpcId", objectMapper.convertValue(request.get("id"), Object.class));
@@ -105,9 +110,8 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             Set<String> extensions = splitExtensions(header(exchange, GatewayHeaders.A2A_EXTENSIONS));
             String idempotencyKey = header(exchange, GatewayHeaders.IDEMPOTENCY_KEY);
             return Mono.just(new GatewayCommand(operation, principal.tenantId(), principal, targetHint, taskId,
-                    text(params, "contextId"), message.isEmpty() ? paramsMap : message, configuration, metadata,
-                    idempotencyKey, exchange.protocol(), requestedVersion == null
-                            ? exchange.protocol().protocolVersion() : requestedVersion, extensions));
+                    contextId, message.isEmpty() ? paramsMap : message, configuration, metadata,
+                    idempotencyKey, exchange.protocol(), negotiatedVersion, extensions));
         }
         catch (Exception ex) {
             return Mono.error(ex instanceof IllegalArgumentException ? ex
@@ -130,9 +134,21 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             request.put("id", command.metadata().getOrDefault("jsonRpcId", UUID.randomUUID().toString()));
             request.put("method", method(command.operation()));
             Map<String, Object> params = new LinkedHashMap<>();
-            if (command.operation() == GatewayCommand.Operation.SEND_MESSAGE
-                    || command.operation() == GatewayCommand.Operation.SEND_STREAMING_MESSAGE) {
-                params.put("message", command.message());
+            if (isMessageOperation(command.operation())) {
+                Map<String, Object> message = new LinkedHashMap<>(command.message());
+                String upstreamTaskId = command.metadata().containsKey("upstreamTaskId")
+                        ? textValue(command.metadata().get("upstreamTaskId"))
+                        : textValue(command.gatewayTaskId());
+                String upstreamContextId = command.metadata().containsKey("upstreamContextId")
+                        ? textValue(command.metadata().get("upstreamContextId"))
+                        : textValue(command.gatewayContextId());
+                if (upstreamTaskId != null) {
+                    message.put("taskId", upstreamTaskId);
+                }
+                if (upstreamContextId != null) {
+                    message.put("contextId", upstreamContextId);
+                }
+                params.put("message", message);
             }
             else {
                 params.putAll(command.message());
@@ -140,19 +156,22 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             if (!command.configuration().isEmpty()) {
                 params.put("configuration", command.configuration());
             }
-            if (isTaskOperation(command.operation())) {
-                Object upstreamTaskId = command.metadata().getOrDefault("upstreamTaskId", command.gatewayTaskId());
-                Object upstreamContextId = command.metadata().getOrDefault("upstreamContextId",
-                        command.gatewayContextId());
+            if (isTaskBoundOperation(command.operation())) {
+                String upstreamTaskId = command.metadata().containsKey("upstreamTaskId")
+                        ? textValue(command.metadata().get("upstreamTaskId"))
+                        : textValue(command.gatewayTaskId());
+                String upstreamContextId = command.metadata().containsKey("upstreamContextId")
+                        ? textValue(command.metadata().get("upstreamContextId"))
+                        : textValue(command.gatewayContextId());
                 if (upstreamTaskId != null) {
-                    params.put("id", upstreamTaskId);
+                    params.put(isIdOperation(command.operation()) ? "id" : "taskId", upstreamTaskId);
                 }
                 if (upstreamContextId != null) {
                     params.put("contextId", upstreamContextId);
                 }
             }
-            if (command.gatewayTaskId() != null && !command.gatewayTaskId().isBlank()) {
-                params.putIfAbsent("gatewayTaskId", command.gatewayTaskId());
+            if (agentInterface.upstreamTenant() != null && !agentInterface.upstreamTenant().isBlank()) {
+                params.put("tenant", agentInterface.upstreamTenant());
             }
             request.put("params", params);
             boolean streaming = isStreamingOperation(command.operation());
@@ -207,6 +226,10 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("statusCode", response.statusCode());
             metadata.put("terminal", response.terminal());
+            if (body == null) {
+                return Flux.just(new GatewayEvent(GatewayEvent.Type.TASK_COMPLETED, "unknown", null, null,
+                        Instant.now(), metadata));
+            }
             if (response.statusCode() < 200 || response.statusCode() >= 300 || body.has("error")) {
                 metadata.put("error", body.has("error") ? body.get("error") : response.body());
                 return Flux.just(new GatewayEvent(GatewayEvent.Type.ERROR, "unknown", null, body, Instant.now(),
@@ -229,6 +252,9 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
 
     /** Extracts task and context identifiers from a JSON-RPC result envelope. */
     public JsonRpcTaskReference extractTaskReference(String body) {
+        if (body == null || body.isBlank()) {
+            return new JsonRpcTaskReference(null, null);
+        }
         try {
             return extractTaskReference(objectMapper.readTree(body));
         }
@@ -329,9 +355,21 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
         };
     }
 
-    private boolean isTaskOperation(GatewayCommand.Operation operation) {
+    private boolean isIdOperation(GatewayCommand.Operation operation) {
         return operation == GatewayCommand.Operation.GET_TASK || operation == GatewayCommand.Operation.CANCEL_TASK
                 || operation == GatewayCommand.Operation.SUBSCRIBE_TO_TASK;
+    }
+
+    private boolean isTaskBoundOperation(GatewayCommand.Operation operation) {
+        return isIdOperation(operation) || operation == GatewayCommand.Operation.CREATE_TASK_PUSH_NOTIFICATION_CONFIG
+                || operation == GatewayCommand.Operation.GET_TASK_PUSH_NOTIFICATION_CONFIG
+                || operation == GatewayCommand.Operation.LIST_TASK_PUSH_NOTIFICATION_CONFIGS
+                || operation == GatewayCommand.Operation.DELETE_TASK_PUSH_NOTIFICATION_CONFIG;
+    }
+
+    private boolean isMessageOperation(GatewayCommand.Operation operation) {
+        return operation == GatewayCommand.Operation.SEND_MESSAGE
+                || operation == GatewayCommand.Operation.SEND_STREAMING_MESSAGE;
     }
 
     private boolean isStreamingOperation(GatewayCommand.Operation operation) {
@@ -350,6 +388,11 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
                 return GatewayEvent.Type.TASK_COMPLETED;
             }
             return GatewayEvent.Type.TASK_STATUS;
+        }
+        JsonNode task = result != null && result.has("task") ? result.get("task") : null;
+        if (task != null && task.isObject() && task.has("status")) {
+            return isTerminalStatus(task.get("status")) ? GatewayEvent.Type.TASK_COMPLETED
+                    : GatewayEvent.Type.TASK_STATUS;
         }
         if (terminal || taskId == null) {
             return taskId == null ? GatewayEvent.Type.TASK_STATUS : GatewayEvent.Type.TASK_COMPLETED;
@@ -396,6 +439,24 @@ public final class JsonRpcProtocolAdapter implements ProtocolAdapter {
     private String text(JsonNode node, String field) {
         JsonNode value = node == null ? null : node.get(field);
         return value == null || !value.isTextual() || value.asText().isBlank() ? null : value.asText();
+    }
+
+    private String firstText(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String textValue(Object primary, Object fallback) {
+        String value = primary == null ? null : primary.toString();
+        return firstText(value, fallback == null ? null : fallback.toString());
+    }
+
+    private String textValue(Object value) {
+        return textValue(value, null);
     }
 
     private String header(InboundExchange exchange, String name) {

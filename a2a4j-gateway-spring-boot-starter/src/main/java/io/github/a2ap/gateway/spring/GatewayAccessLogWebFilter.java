@@ -29,8 +29,11 @@ public final class GatewayAccessLogWebFilter implements WebFilter {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         Instant started = Instant.now();
-        String requestId = header(exchange, GatewayHeaders.GATEWAY_REQUEST_ID, "unknown");
-        String traceId = GatewayTraceContext.traceIdOr(header(exchange, GatewayHeaders.TRACEPARENT, ""), requestId);
+        String requestId = GatewayRequestIdResolver.resolve(exchange);
+        String traceId = GatewayTraceContext.traceIdOr(
+                exchange.getRequest().getHeaders().getFirst(GatewayHeaders.TRACEPARENT),
+                requestId);
+        exchange.getResponse().getHeaders().set(GatewayHeaders.GATEWAY_REQUEST_ID, requestId);
         return chain.filter(exchange)
                 .doOnSuccess(ignored -> record(exchange, requestId, traceId, started, null))
                 .doOnError(error -> record(exchange, requestId, traceId, started, error));
@@ -48,11 +51,6 @@ public final class GatewayAccessLogWebFilter implements WebFilter {
         catch (RuntimeException ignored) {
             // Logging is best effort and must not affect the response.
         }
-    }
-
-    private static String header(ServerWebExchange exchange, String name, String fallback) {
-        String value = exchange.getRequest().getHeaders().getFirst(name);
-        return value == null || value.isBlank() ? fallback : value;
     }
 
     private static String latencyBucket(long millis) {

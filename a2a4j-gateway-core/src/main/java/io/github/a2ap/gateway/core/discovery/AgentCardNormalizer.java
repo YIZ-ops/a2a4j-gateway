@@ -105,8 +105,26 @@ public final class AgentCardNormalizer {
                     configured.weight(), configured.credentialRef(), AgentInstance.HealthStatus.HEALTHY,
                     sha256(cardJsonByInstanceId.get(configured.instanceId())), effectiveCheckedAt));
         }
+        Map<String, Object> cardMetadata = new LinkedHashMap<>();
+        for (String field : List.of("capabilities", "securityRequirements", "signatures")) {
+            JsonNode value = firstCard.get(field);
+            if (value != null && !value.isNull()) {
+                cardMetadata.put(field, objectMapper.convertValue(value, Object.class));
+            }
+        }
+        // A2A 1.0 declares AgentExtension values inside AgentCapabilities.extensions.
+        // Accept the legacy top-level spelling only as an input migration and retain the
+        // normalized representation under capabilities for all downstream projections.
+        JsonNode legacyExtensions = firstCard.get("extensions");
+        if (legacyExtensions != null && !legacyExtensions.isNull()) {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> capabilities = (Map<String, Object>) cardMetadata
+                    .computeIfAbsent("capabilities", ignored -> new LinkedHashMap<String, Object>());
+            capabilities.putIfAbsent("extensions", objectMapper.convertValue(legacyExtensions, Object.class));
+        }
         return new AgentDefinition(registration.tenantId(), registration.agentId(), displayName,
-                registration.enabled(), skills, registration.routingLabels(), registration.protocolPolicy(), instances);
+                registration.enabled(), skills, registration.routingLabels(), registration.protocolPolicy(), instances,
+                cardMetadata);
     }
 
     private List<AgentInterface> normalizeInterfaces(String instanceId, JsonNode interfaces,
@@ -122,7 +140,9 @@ public final class AgentCardNormalizer {
             }
             String endpoint = value.get("url").asText();
             urlPolicy.validateConfiguredUrl(endpoint);
-            normalized.add(new AgentInterface(instanceId + "-" + binding, endpoint, binding, version, null));
+            String tenant = value.has("tenant") && value.get("tenant").isTextual()
+                    && !value.get("tenant").asText().isBlank() ? value.get("tenant").asText() : null;
+            normalized.add(new AgentInterface(instanceId + "-" + binding, endpoint, binding, version, tenant));
         }
         if (normalized.isEmpty()) {
             throw new IllegalArgumentException("Agent Card must expose at least one supported interface");

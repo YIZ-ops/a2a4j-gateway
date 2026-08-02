@@ -17,6 +17,7 @@
 package io.github.a2ap.core.server.impl;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.github.a2ap.core.exception.A2AError;
 import io.github.a2ap.core.jsonrpc.JSONRPCError;
 import io.github.a2ap.core.jsonrpc.JSONRPCRequest;
 import io.github.a2ap.core.jsonrpc.JSONRPCResponse;
@@ -158,7 +159,9 @@ public class DefaultDispatcher implements Dispatcher {
                                 JSONRPCResponse response = newResponse(request);
                                 response.setResult(streamResponse(event));
                                 return response;
-                            });
+                            })
+                            .onErrorResume(A2AError.class,
+                                    error -> Flux.just(protocolErrorResponse(request, error)));
                 }
                 default -> {
                     log.warn("Unsupported method: {}", method);
@@ -179,6 +182,12 @@ public class DefaultDispatcher implements Dispatcher {
     private JSONRPCResponse newResponse(JSONRPCRequest request) {
         JSONRPCResponse response = new JSONRPCResponse();
         response.setId(request.getId());
+        return response;
+    }
+
+    private JSONRPCResponse protocolErrorResponse(JSONRPCRequest request, A2AError error) {
+        JSONRPCResponse response = newResponse(request);
+        response.setError(new JSONRPCError(error.getCode(), error.getMessage(), error.getData()));
         return response;
     }
 

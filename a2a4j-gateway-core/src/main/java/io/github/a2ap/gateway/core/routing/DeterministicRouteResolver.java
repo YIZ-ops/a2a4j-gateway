@@ -23,6 +23,7 @@ import io.github.a2ap.gateway.api.model.RouteDecision;
 import io.github.a2ap.gateway.api.model.RoutingContext;
 import io.github.a2ap.gateway.api.model.TargetHint;
 import io.github.a2ap.gateway.api.model.TaskRoute;
+import io.github.a2ap.gateway.api.model.TaskRouteQuery;
 import io.github.a2ap.gateway.api.spi.AgentRegistry;
 import io.github.a2ap.gateway.api.spi.AuthorizationPolicy;
 import io.github.a2ap.gateway.api.spi.RouteResolver;
@@ -86,7 +87,41 @@ public final class DeterministicRouteResolver implements RouteResolver {
                             RouteResolutionException.Code.TASK_ROUTE_NOT_FOUND, "gateway task route was not found")))
                     .flatMap(route -> resolveAffinity(command, context, route));
         }
+        if (contextAffinityEligible(command)) {
+            String agentId = command.targetHint().agentId();
+            TaskRouteQuery query = new TaskRouteQuery(command.tenantId(), null, agentId, java.util.Set.of(), 1000,
+                    null, command.principal().fingerprint(), command.gatewayContextId());
+            return taskRouteStore.list(query)
+                    .flatMap(page -> page.routes().stream().findFirst()
+                            .map(route -> resolveContextAffinity(command, context, route))
+                            .orElseGet(() -> resolveNew(command, context)));
+        }
         return resolveNew(command, context);
+    }
+
+    private boolean contextAffinityEligible(GatewayCommand command) {
+        return taskRouteStore != null && command.gatewayContextId() != null
+                && !command.gatewayContextId().isBlank()
+                && (command.operation() == GatewayCommand.Operation.SEND_MESSAGE
+                        || command.operation() == GatewayCommand.Operation.SEND_STREAMING_MESSAGE);
+    }
+
+    private Mono<RouteDecision> resolveContextAffinity(GatewayCommand command, RoutingContext context,
+            TaskRoute route) {
+        if (!command.tenantId().equals(route.tenantId())) {
+            return Mono.error(new RouteResolutionException(RouteResolutionException.Code.AUTHORIZATION_DENIED,
+                    "context route tenant does not match command tenant"));
+        }
+        if (!command.principal().fingerprint().equals(route.principalFingerprint())) {
+            return Mono.error(new RouteResolutionException(RouteResolutionException.Code.AUTHORIZATION_DENIED,
+                    "context route principal does not match command principal"));
+        }
+        return registry.get(command.tenantId(), route.agentId())
+                .switchIfEmpty(Mono.error(new RouteResolutionException(RouteResolutionException.Code.AGENT_UNAVAILABLE,
+                        "context route Agent is not available")))
+                .flatMap(agent -> authorize(command, agent).map(ignored -> decision(command, context, agent,
+                        Map.of("rule", "context-affinity", "contextId", command.gatewayContextId(),
+                                "instanceId", route.instanceId()))));
     }
 
     private Mono<RouteDecision> resolveAffinity(GatewayCommand command, RoutingContext context, TaskRoute route) {

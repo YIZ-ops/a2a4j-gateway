@@ -19,6 +19,8 @@ package io.github.a2ap.gateway.spring;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.a2ap.gateway.core.forwarding.GatewayForwardingException;
+import io.github.a2ap.gateway.core.forwarding.GatewayUpstreamException;
+import io.github.a2ap.gateway.core.protocol.VersionNotSupportedException;
 import io.github.a2ap.gateway.core.routing.RouteResolutionException;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -62,11 +64,18 @@ public final class GatewayHttpErrorHandler {
         }
         if (error instanceof RouteResolutionException route) {
             return switch (route.code()) {
-                case TASK_ROUTE_NOT_FOUND, AGENT_NOT_FOUND -> mapping(404, "GATEWAY_ROUTE_NOT_FOUND");
+                case TASK_ROUTE_NOT_FOUND -> mapping(404, "TASK_NOT_FOUND");
+                case AGENT_NOT_FOUND -> mapping(404, "GATEWAY_ROUTE_NOT_FOUND");
                 case ROUTE_CONFLICT -> mapping(409, "GATEWAY_ROUTE_CONFLICT");
                 case AGENT_UNAVAILABLE, DEADLINE_EXCEEDED -> mapping(503, "GATEWAY_AGENT_UNAVAILABLE");
                 case AUTHORIZATION_DENIED -> mapping(403, "GATEWAY_POLICY_DENIED");
             };
+        }
+        if (error instanceof VersionNotSupportedException) {
+            return mapping(400, "VERSION_NOT_SUPPORTED");
+        }
+        if (error instanceof GatewayUpstreamException upstream) {
+            return mapping(upstream.httpStatus(), upstream.reason() == null ? "UPSTREAM_ERROR" : upstream.reason());
         }
         if (error instanceof GatewayForwardingException forwarding) {
             return switch (forwarding.code()) {
@@ -77,6 +86,9 @@ public final class GatewayHttpErrorHandler {
                 case DUPLICATE_IN_FLIGHT -> mapping(409, "GATEWAY_DUPLICATE_IN_FLIGHT");
                 case OUTCOME_UNKNOWN -> mapping(503, "GATEWAY_OUTCOME_UNKNOWN");
                 case RATE_LIMITED -> mapping(429, "GATEWAY_RATE_LIMITED");
+                case PUSH_NOTIFICATION_NOT_SUPPORTED -> mapping(400, "PUSH_NOTIFICATION_NOT_SUPPORTED");
+                case UNSUPPORTED_OPERATION -> mapping(400, "UNSUPPORTED_OPERATION");
+                case EXTENDED_AGENT_CARD_NOT_CONFIGURED -> mapping(400, "EXTENDED_AGENT_CARD_NOT_CONFIGURED");
             };
         }
         if (error instanceof AuthenticationException) {

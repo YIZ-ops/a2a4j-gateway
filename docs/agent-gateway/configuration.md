@@ -217,6 +217,6 @@ a2a:
 
 ## 5. 健康、指标与 MVP 限制
 
-sample 默认暴露 `health`、`info`、`prometheus`，具体路径见 [Gateway API 参考](./api-reference.md)。存在 Micrometer `MeterRegistry` 时，Starter 会注册 `gateway.requests.total`、`gateway.request.duration`、`gateway.streams.started`、`gateway.stream.duration`、`gateway.task.routes`、`gateway.store.entries`、`gateway.store.capacity`、`gateway.store.evictions`、`gateway.store.expired` 等指标。
+sample 默认暴露 `health`、`info`、`prometheus`，具体路径见 [Gateway API 参考](./api-reference.md)。存在 Micrometer `MeterRegistry` 时，Starter 会注册 `gateway.requests.total`、`gateway.request.duration`、`gateway.streams.started`、`gateway.stream.duration`、`gateway.protocol.errors`、`gateway.store.entries`、`gateway.store.capacity`、`gateway.store.evictions`、`gateway.store.expired` 等指标。默认没有 Task Route 总量、活动流或熔断状态指标，完整语义见 [Runbook](./runbook.md)。
 
 MVP 的 Agent 快照、Task Route 和幂等 Store 均为单实例内存实现，Gateway 重启后旧任务路由不可恢复。企业版需以 Redis/JDBC/控制平面替换这些 SPI，再增加动态注册、分布式限流、跨副本 SSE 恢复、gRPC Binding 与完整 Push Notification 代理。

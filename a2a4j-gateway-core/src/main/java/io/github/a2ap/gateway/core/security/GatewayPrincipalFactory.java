@@ -114,8 +114,9 @@ public final class GatewayPrincipalFactory {
 
     private String fingerprint(String tenantId, String subject, Map<String, Object> claims) {
         String issuer = String.valueOf(claims.getOrDefault("iss", ""));
-        String tokenId = String.valueOf(claims.getOrDefault("jti", ""));
-        String canonical = tenantId + "\u0000" + subject + "\u0000" + issuer + "\u0000" + tokenId;
+        // jti identifies one token, not the stable owner of a gateway task. A refresh
+        // must therefore keep the same resource-ownership fingerprint.
+        String canonical = tenantId + "\u0000" + issuer + "\u0000" + subject;
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
                     .digest(canonical.getBytes(StandardCharsets.UTF_8)));

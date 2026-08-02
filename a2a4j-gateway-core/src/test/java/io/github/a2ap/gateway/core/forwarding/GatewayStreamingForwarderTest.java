@@ -18,6 +18,7 @@ package io.github.a2ap.gateway.core.forwarding;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.a2ap.gateway.api.model.AgentDefinition;
@@ -95,13 +96,71 @@ class GatewayStreamingForwarderTest {
         assertTrue(transport.cancelled.get());
     }
 
+    @Test
+    void appendsArtifactPartsIntoOneSnapshotArtifact() {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.replace(agent());
+        InMemoryTaskRouteStore routes = new InMemoryTaskRouteStore(10);
+        GatewayForwarder forwarder = new GatewayForwarder(registry,
+                new DeterministicRouteResolver(registry, routes, new DefaultAuthorizationPolicy(), Map.of()),
+                new WeightedLeastActiveLoadBalancer(), new JsonRpcProtocolAdapter(), new AppendTransport(),
+                credentials(), routes, null, Duration.ofHours(1), Duration.ofSeconds(5),
+                new TenantStreamLimiter(2));
+
+        forwarder.stream(command(), context()).collectList().block();
+
+        TaskRoute route = routes.list(new io.github.a2ap.gateway.api.model.TaskRouteQuery("tenant-a", null,
+                "agent-a", Set.of(), 10, null, "fp-a", null)).block().routes().get(0);
+        List<?> artifacts = (List<?>) route.taskSnapshot().get("artifacts");
+        assertEquals(1, artifacts.size());
+        assertEquals(2, ((List<?>) ((Map<?, ?>) artifacts.get(0)).get("parts")).size());
+    }
+
+    @Test
+    void rejectsStreamingWhenCapabilityIsMissing() {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.replace(agent(Map.of()));
+        InMemoryTaskRouteStore routes = new InMemoryTaskRouteStore(10);
+        GatewayForwarder forwarder = new GatewayForwarder(registry,
+                new DeterministicRouteResolver(registry, routes, new DefaultAuthorizationPolicy(), Map.of()),
+                new WeightedLeastActiveLoadBalancer(), new JsonRpcProtocolAdapter(), new StreamingTransport(),
+                credentials(), routes, null, Duration.ofHours(1), Duration.ofSeconds(5),
+                new TenantStreamLimiter(2));
+
+        GatewayForwardingException error = assertThrows(GatewayForwardingException.class,
+                () -> forwarder.stream(command(), context()).collectList().block());
+        assertEquals(GatewayForwardingException.Code.UNSUPPORTED_OPERATION, error.code());
+    }
+
+    @Test
+    void mapsAnUpstreamStreamRejectionBeforeEmittingAnEvent() {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.replace(agent());
+        InMemoryTaskRouteStore routes = new InMemoryTaskRouteStore(10);
+        GatewayForwarder forwarder = new GatewayForwarder(registry,
+                new DeterministicRouteResolver(registry, routes, new DefaultAuthorizationPolicy(), Map.of()),
+                new WeightedLeastActiveLoadBalancer(), new JsonRpcProtocolAdapter(), new RejectedStreamTransport(),
+                credentials(), routes, null, Duration.ofHours(1), Duration.ofSeconds(5),
+                new TenantStreamLimiter(2));
+
+        GatewayUpstreamException error = assertThrows(GatewayUpstreamException.class,
+                () -> forwarder.stream(command(), context()).collectList().block());
+        assertEquals(404, error.httpStatus());
+        assertEquals(-32001, error.rpcCode());
+        assertEquals("TASK_NOT_FOUND", error.reason());
+    }
+
     private AgentDefinition agent() {
+        return agent(Map.of("capabilities", Map.of("streaming", true)));
+    }
+
+    private AgentDefinition agent(Map<String, Object> cardMetadata) {
         AgentInstance instance = new AgentInstance("instance-1", "https://agent.example.test/card",
                 List.of(new AgentInterface("jsonrpc", "https://agent.example.test/a2a", "JSONRPC", "1.0", null)),
                 1, null, AgentInstance.HealthStatus.HEALTHY, "hash", Instant.now());
         return new AgentDefinition("tenant-a", "agent-a", "Agent A", true,
                 List.of(new AgentSkillDefinition("echo", "Echo", "Echo", List.of(), List.of("text/plain"),
-                        List.of("text/plain"))), Map.of(), ProtocolPolicy.a2aV1Mvp(), List.of(instance));
+                        List.of("text/plain"))), Map.of(), ProtocolPolicy.a2aV1Mvp(), List.of(instance), cardMetadata);
     }
 
     private GatewayCommand command() {
@@ -163,6 +222,55 @@ class GatewayStreamingForwarderTest {
                                     + "\"taskId\":\"up-1\",\"contextId\":\"up-c\","
                                     + "\"status\":{\"state\":\"TASK_STATE_COMPLETED\"}}}}",
                             Map.of("SSE-Id", "e-2"), true));
+        }
+
+    }
+
+    private static final class AppendTransport implements AgentTransport {
+
+        @Override
+        public Flux<OutboundResponse> exchange(AgentInstance target, OutboundRequest request,
+                OutboundCredentials credentials) {
+            return exchangeStream(target, request, credentials);
+        }
+
+        @Override
+        public Flux<OutboundResponse> exchangeStream(AgentInstance target, OutboundRequest request,
+                OutboundCredentials credentials) {
+            return Flux.just(response("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"task\":{"
+                            + "\"id\":\"up-1\",\"contextId\":\"up-c\",\"status\":{\"state\":\"TASK_STATE_WORKING\"}}}}", false),
+                    response("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"artifactUpdate\":{"
+                            + "\"taskId\":\"up-1\",\"contextId\":\"up-c\",\"append\":false,"
+                            + "\"artifact\":{\"artifactId\":\"a-1\",\"parts\":[{\"text\":\"one\"}]}}}}", false),
+                    response("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"artifactUpdate\":{"
+                            + "\"taskId\":\"up-1\",\"contextId\":\"up-c\",\"append\":true,"
+                            + "\"artifact\":{\"artifactId\":\"a-1\",\"parts\":[{\"text\":\"two\"}]}}}}", false),
+                    response("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"statusUpdate\":{"
+                            + "\"taskId\":\"up-1\",\"contextId\":\"up-c\","
+                            + "\"status\":{\"state\":\"TASK_STATE_COMPLETED\"}}}}", true));
+        }
+
+        private OutboundResponse response(String body, boolean terminal) {
+            return new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 200, body, Map.of(), terminal);
+        }
+
+    }
+
+    private static final class RejectedStreamTransport implements AgentTransport {
+
+        @Override
+        public Flux<OutboundResponse> exchange(AgentInstance target, OutboundRequest request,
+                OutboundCredentials credentials) {
+            return exchangeStream(target, request, credentials);
+        }
+
+        @Override
+        public Flux<OutboundResponse> exchangeStream(AgentInstance target, OutboundRequest request,
+                OutboundCredentials credentials) {
+            return Flux.just(new OutboundResponse(ProtocolDescriptor.jsonRpcStreaming(), 404,
+                    "{\"jsonrpc\":\"2.0\",\"id\":1,\"error\":{\"code\":-32001,"
+                            + "\"message\":\"missing\"}}",
+                    Map.of(), true));
         }
 
     }

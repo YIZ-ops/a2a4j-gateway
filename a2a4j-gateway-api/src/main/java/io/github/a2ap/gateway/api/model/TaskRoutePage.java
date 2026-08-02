@@ -19,11 +19,19 @@ package io.github.a2ap.gateway.api.model;
 import java.util.List;
 
 /** Immutable page returned by a task route store. */
-public record TaskRoutePage(List<TaskRoute> routes, String nextPageToken) {
+public record TaskRoutePage(List<TaskRoute> routes, String nextPageToken, int totalSize) {
+
+    /** Preserves the original page shape for SPI callers. */
+    public TaskRoutePage(List<TaskRoute> routes, String nextPageToken) {
+        this(routes, nextPageToken, routes == null ? 0 : routes.size());
+    }
 
     /** Creates a defensive copy of route results. */
     public TaskRoutePage {
         routes = routes == null ? List.of() : List.copyOf(routes);
+        if (totalSize < 0) {
+            throw new IllegalArgumentException("totalSize must not be negative");
+        }
     }
 
 }

@@ -23,7 +23,14 @@ import java.util.Objects;
 /** Immutable gateway-owned definition of a logical Agent. */
 public record AgentDefinition(String tenantId, String agentId, String displayName, boolean enabled,
         List<AgentSkillDefinition> skills, Map<String, String> routingLabels, ProtocolPolicy protocolPolicy,
-        List<AgentInstance> instances) {
+        List<AgentInstance> instances, Map<String, Object> cardMetadata) {
+
+    /** Preserves the original normalized definition shape for gateway SPI callers. */
+    public AgentDefinition(String tenantId, String agentId, String displayName, boolean enabled,
+            List<AgentSkillDefinition> skills, Map<String, String> routingLabels, ProtocolPolicy protocolPolicy,
+            List<AgentInstance> instances) {
+        this(tenantId, agentId, displayName, enabled, skills, routingLabels, protocolPolicy, instances, Map.of());
+    }
 
     /** Creates a validated immutable Agent definition. */
     public AgentDefinition {
@@ -34,6 +41,7 @@ public record AgentDefinition(String tenantId, String agentId, String displayNam
         routingLabels = routingLabels == null ? Map.of() : Map.copyOf(routingLabels);
         protocolPolicy = Objects.requireNonNull(protocolPolicy, "protocolPolicy");
         instances = instances == null ? List.of() : List.copyOf(instances);
+        cardMetadata = cardMetadata == null ? Map.of() : Map.copyOf(cardMetadata);
     }
 
     private static void requireText(String value, String name) {

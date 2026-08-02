@@ -2,7 +2,8 @@
 
 本文结合当前项目代码，说明一次客户端请求如何进入 Gateway、完成鉴权和路由、转发到外部 Agent，再将结果返回给客户端。
 
-本文以同步 `SendMessage` 为主，同时说明 JSON-RPC 和 SSE 流式请求的差异。
+本文以同步 `SendMessage` 为主，同时说明 JSON-RPC、HTTP+JSON、SSE 流式请求以及任务操作的差异。除
+`ListTasks` 由 Gateway 本地的 `TaskRouteStore` 直接提供外，其余数据面操作会按下述流程选择并访问外部 Agent。
 
 ## 1. 总体链路
 
@@ -37,7 +38,7 @@ sequenceDiagram
     T-->>GF: OutboundResponse
     GF->>PA: decodeResponse(response)
     PA-->>GF: normalized result/events
-    GF->>TS: save task route and ID mapping
+    GF->>TS: update task route and upstream ID mapping
     GF-->>GC: GatewayResult
     GC-->>C: HTTP response
 ```
@@ -100,7 +101,9 @@ Controller 同时创建 `RoutingContext`：
 new RoutingContext(requestId, traceId, deadline, metadata)
 ```
 
-其中 `requestId` 用于请求关联，`traceId` 用于链路追踪，`deadline` 由 `response-timeout` 计算。没有 `X-Gateway-Request-Id` 时，Gateway 会生成 UUID。
+其中 `requestId` 用于请求关联，`traceId` 用于链路追踪，`deadline` 由 `response-timeout` 计算。没有
+`X-Gateway-Request-Id` 时，`GatewayRequestIdResolver` 会生成 UUID 并保存到当前 `ServerWebExchange`；解码、
+`RoutingContext` 和审计在同一次请求中复用该值，`GatewayAccessLogWebFilter` 还会在响应头返回最终 request ID。
 
 ## 4. 解码为 GatewayCommand
 
@@ -118,12 +121,15 @@ new RoutingContext(requestId, traceId, deadline, metadata)
 
 Adapter 解析 `message`、`configuration`、`contextId`、任务 ID、目标 Agent、目标 Skill、幂等键和追踪 Header，最后构造统一的 `GatewayCommand`。
 
+当前公开 HTTP 边界没有路由标签 Header 或字段，两个入站 Adapter 都会将 `TargetHint.labels` 设为空 Map。
+路由标签能力仅适用于扩展代码直接构造的 `GatewayCommand`，不能通过当前 HTTP+JSON 或 JSON-RPC API 指定。
+
 ### 4.2 JSON-RPC
 
 [`JsonRpcProtocolAdapter.decode`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/protocol/JsonRpcProtocolAdapter.java) 还会校验：
 
 - JSON-RPC 版本必须是 `2.0`；
-- `id` 不能为空；
+- `id` 不能缺失或为 `null`；
 - `method` 必须是支持的 A2A 1.0 方法；
 - `params` 必须是对象；
 - `A2A-Version` 必须是 `1.0`。
@@ -140,14 +146,20 @@ forwarder.forward(command, routingContext(exchange))
 
 代码是 [`GatewayForwarder.forward`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/forwarding/GatewayForwarder.java)。
 
-`forward` 外层负责请求指标和审计。`forwardInternal` 先判断是否带有 `Idempotency-Key`：
+`forward` 外层负责请求指标，Controller 负责写入审计事件。`forwardInternal` 先判断是否带有
+`Idempotency-Key`：
 
 ```text
 没有 Idempotency-Key -> 直接 execute
 有 Idempotency-Key    -> 查询、创建或重放幂等记录
 ```
 
-对于 `SendMessage`，最终进入 `execute(command, context)`。
+对于 `SendMessage`，最终进入 `execute(command, context)`。`configuration.returnImmediately` 不会改变
+Gateway 的入口类型，也不会把 `SendMessage` 转换成 SSE；该配置由 Adapter 原样编码给上游 Agent。上游快速返回
+活动任务后，客户端使用 Gateway Task ID 调用 `GetTask` 或 `SubscribeToTask`。
+
+`ListTasks` 是一个例外：它完成路由和 `task:read` 鉴权后，直接查询 Gateway 的 `TaskRouteStore` 并返回当前主体
+可见的任务快照，不会向外部 Agent 发送 `ListTasks` 请求。
 
 ## 6. 路由到哪个 Agent
 
@@ -172,16 +184,32 @@ routeResolver.resolve(command, context)
     -> upstreamContextId
 ```
 
-因此 `GetTask`、`CancelTask` 和 `SubscribeToTask` 会回到原来的 Agent 实例。
+因此 `GetTask`、`CancelTask`、`SubscribeToTask` 以及四个 Push Notification 配置操作都会回到原来的 Agent
+实例。`SubscribeToTask` 还会在转发前检查路由状态；任务已完成、失败、取消或拒绝时直接返回“不支持订阅终态任务”的错误。
 
-### 6.2 新任务
+### 6.2 已有上下文
+
+如果 `SendMessage` 或 `SendStreamingMessage` 没有 Task ID，但消息携带 `contextId`，Resolver 会按照以下条件查询
+已有 `TaskRoute`：
+
+```text
+(tenantId, principalFingerprint, gatewayContextId, optional agentId)
+    -> agentId
+    -> instanceId
+    -> upstreamContextId
+```
+
+命中后请求固定到原 Agent 和实例，并在出站编码时把 Gateway Context ID 改写为上游 Context ID。未命中才按新任务
+规则选择 Agent。
+
+### 6.3 新任务
 
 新任务的路由优先级是：
 
-1. 路径中的 `{agentId}`；
+1. 路径中的 `{agentId}`，它会覆盖同名目标 Header；
 2. `X-A2A-Target-Agent`；
 3. `X-A2A-Target-Skill`；
-4. 路由标签；
+4. `TargetHint.labels`，仅限内部扩展代码构造的命令；
 5. 当前租户的默认 Agent。
 
 例如：
@@ -193,7 +221,7 @@ default-agent-by-tenant:
 
 如果请求没有显式目标，就会选择当前租户的 `research-agent`。
 
-### 6.3 路由鉴权
+### 6.4 路由鉴权
 
 路由过程中还会检查：
 
@@ -205,17 +233,27 @@ default-agent-by-tenant:
 
 ## 7. 选择 Agent 实例和出站协议
 
-路由得到逻辑 Agent 后，Gateway 从 `AgentRegistry` 读取 Agent Card 快照，再通过 `AgentLoadBalancer` 选择实例：
+路由得到逻辑 Agent 后，Gateway 从 `AgentRegistry` 读取 Agent Card 快照，并先校验操作所需能力：
+
+- `SendStreamingMessage`、`SubscribeToTask` 要求 `capabilities.streaming: true`；
+- Push Notification 配置操作要求 `capabilities.pushNotifications: true`；
+- `GetExtendedAgentCard` 要求扩展 Card 能力；
+- `SubscribeToTask` 在 Card 明确声明 subscription 能力为 `false` 时被拒绝。
+
+能力校验通过后，再通过 `AgentLoadBalancer` 选择实例：
 
 ```java
 loadBalancer.choose(agent, command, context)
 ```
 
-已有任务使用 `choosePinned` 固定到原实例。之后根据 Agent Card 的 `supportedInterfaces` 选择出站协议，默认优先级是：
+新任务根据 Agent Card 的 `supportedInterfaces` 选择出站协议，默认优先级是：
 
 ```text
 JSONRPC > HTTP+JSON
 ```
+
+已有任务或上下文亲和请求使用 `choosePinned` 固定到原实例，并严格复用 `TaskRoute` 保存的 `interfaceKey`、
+`protocolBinding` 和 `protocolVersion`；不会再次按默认优先级切换 Binding。如果该接口已不存在，Gateway 返回接口不可用错误。
 
 实现位于 [`DefaultAgentInterfaceSelector`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/routing/DefaultAgentInterfaceSelector.java)。
 
@@ -228,14 +266,18 @@ JSONRPC > HTTP+JSON
 
 ## 8. 创建 Gateway Task Route
 
-对于 `SEND_MESSAGE` 和 `SEND_STREAMING_MESSAGE`，如果客户端没有提供 Gateway Task ID，Gateway 会生成自己的：
+对于 `SEND_MESSAGE` 和 `SEND_STREAMING_MESSAGE`，如果当前请求没有 Gateway Task ID，Gateway 会生成自己的：
 
 ```text
 gatewayTaskId
 gatewayContextId
 ```
 
-然后创建 `PENDING` 状态的 `TaskRoute`，并在真正发出上游请求前保存。这个路由记录会保存租户、Agent、实例、协议、上游 ID、主体指纹和过期时间。
+然后创建 `PENDING` 状态的 `TaskRoute`，并在真正发出上游请求前保存。初始记录包含租户、Gateway Task/Context
+ID、Agent、实例、接口、协议、主体指纹、幂等键和过期时间；此时尚未收到上游响应，因此 `upstreamTaskId` 和
+`upstreamContextId` 都是 `null`。
+
+收到同步响应或流式事件后，Gateway 再提取上游 Task/Context ID、任务状态和快照，更新同一条 `TaskRoute`。
 
 ## 9. 编码成上游请求
 
@@ -253,6 +295,9 @@ gatewayContextId
       "messageId": "message-001",
       "role": "ROLE_USER",
       "parts": [{"text": "hello"}]
+    },
+    "configuration": {
+      "returnImmediately": true
     }
   }
 }
@@ -276,6 +321,9 @@ A2A-Version: 1.0
     "messageId": "message-001",
     "role": "ROLE_USER",
     "parts": [{"text": "hello"}]
+  },
+  "configuration": {
+    "returnImmediately": true
   }
 }
 ```
@@ -308,7 +356,9 @@ Authorization: Bearer <token>
 transport.exchange(instance, outbound, credentials)
 ```
 
-实现位于 [`ReactorNettyAgentTransport`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/transport/ReactorNettyAgentTransport.java)。Transport 会校验 URL 和 DNS、检查 SSRF 策略、建立连接、设置超时、POST 到接口、检查状态码和响应大小，最后返回 `OutboundResponse`。
+实现位于 [`ReactorNettyAgentTransport`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/transport/ReactorNettyAgentTransport.java)。Transport 会校验 URL 和 DNS、检查 SSRF 策略、建立连接、设置超时，按照
+`OutboundRequest.httpMethod` 使用 POST、GET 或 DELETE 访问接口，检查状态码和响应大小，最后返回
+`OutboundResponse`。
 
 ## 11. 解析上游响应
 
@@ -321,6 +371,12 @@ decodeResponse(response)
 Adapter 会识别 HTTP 状态码、JSON-RPC error、HTTP+JSON 错误、Task ID、Context ID 和终态信息。
 
 如果发现协议错误，Gateway 会返回上游协议错误，而不会把非法响应当作普通业务数据返回。
+
+同步响应和流式响应在此处有一个重要差异：同步路径可以先把错误归一化为 `GatewayResult`；流式路径必须在
+Adapter 解码或写出第一帧前检查上游 HTTP 状态码。上游 SSE 建连返回 4xx/5xx 时，Forwarder 会先从
+JSON-RPC code、ErrorInfo.reason/status 和 HTTP status 推导 canonical A2A error，再抛出绑定无关的错误，
+由入口的 HTTP 或 JSON-RPC Error Handler 返回普通错误响应。该场景不会产生 `200 text/event-stream`，也不会把
+`error` 放进只允许 `task`/`message`/`statusUpdate`/`artifactUpdate` 的 `StreamResponse` oneof。
 
 ## 12. 改写 Task ID 和 Context ID
 
@@ -359,8 +415,11 @@ Gateway 会通过 `TaskRouteStore` 找到原 Agent、实例和上游 Task ID，�
 `GatewayHttpJsonController.toResponse` 会把 `GatewayResult` 转回：
 
 ```http
-200 application/a2a+json
+<status> application/a2a+json
 ```
+
+`Content-Type` 固定为 `application/a2a+json`。HTTP 状态码读取 `GatewayResult.metadata.statusCode`：成功响应通常为
+200，上游错误或 Gateway 规范化错误会使用相应的 4xx/5xx 状态码。
 
 如果出站协议是 JSON-RPC，`HttpJsonProtocolAdapter.toHttpJson` 会提取 JSON-RPC 的 `result`，转换成 HTTP+JSON 响应。
 
@@ -407,6 +466,7 @@ Client
   -> AgentLoadBalancer
   -> ProtocolAdapter.encode
   -> AgentTransport.exchangeStream
+  -> check upstream status before SSE decode
   -> External Agent SSE
   -> SSE parser
   -> ProtocolAdapter.decodeResponse
@@ -415,7 +475,13 @@ Client
   -> Client
 ```
 
-流式请求不会聚合完整响应。Gateway 逐个解析上游事件，转成 `GatewayEvent` 后立即写回客户端。`max-concurrent-streams` 限制租户并发流数量，`stream-idle-timeout` 限制事件之间的最大空闲时间。
+流式请求不会聚合完整响应。Gateway 逐个解析上游事件，转成 `GatewayEvent` 后立即写回客户端。
+`max-concurrent-streams` 限制租户并发流数量，`stream-idle-timeout` 限制事件之间的最大空闲时间。
+只有上游返回 2xx 后才进入上述事件链；建连失败在响应提交前按入站 Binding 返回 HTTP+JSON 或 JSON-RPC 错误。JSON-RPC 入站的每个成功 SSE 事件都保留 JSON-RPC 2.0 response envelope，即使上游实际使用 HTTP+JSON Binding。
+
+进入流式传输前，Gateway 会根据 Agent Card 检查 `capabilities.streaming`。`SubscribeToTask` 还会检查任务路由
+存在、属于当前租户和主体、尚未进入终态，并复用保存的实例及协议接口。当前实现不在 Gateway 端主动合成首个
+Task 快照；首个事件来自上游 `SubscribeToTask` 响应，Gateway 负责改写其中的 Task/Context ID。
 
 ## 15. 失败处理位置
 
@@ -426,9 +492,12 @@ Client
 | 路由 | Agent 不存在、租户不匹配、权限不足 | RouteResolver / AuthorizationPolicy |
 | 实例选择 | 没有健康实例 | AgentLoadBalancer / AgentRegistry |
 | 协议选择 | Card 没有兼容接口 | AgentInterfaceSelector |
+| 能力校验 | Streaming、Push 或扩展 Card 能力未声明 | GatewayForwarder |
 | 出站认证 | 凭证不存在或不可用 | CredentialProvider |
 | 网络连接 | DNS、TLS、SSRF、超时 | AgentTransport |
-| 上游响应 | HTTP 错误或非法 A2A 响应 | ProtocolAdapter.decodeResponse |
+| 上游同步响应 | HTTP 错误或非法 A2A 响应 | `GatewayForwarder` 统一分类；Adapter 负责成功 payload 解码 |
+| 上游流式建连 | 4xx/5xx、尚未建立 SSE | `GatewayForwarder` 在 `decodeResponse` 前检查状态并抛出规范化错误 |
+| 上游流式事件 | 非法 oneof、ID 或事件 payload | ProtocolAdapter / SSE codec |
 | 任务关联 | Task Route 不存在或过期 | TaskRouteStore |
 | 返回客户端 | 序列化失败 | Controller / Error Handler |
 
@@ -438,6 +507,7 @@ Client
 | --- | --- |
 | HTTP+JSON Controller | [`GatewayHttpJsonController`](../../a2a4j-gateway-spring-boot-starter/src/main/java/io/github/a2ap/gateway/spring/GatewayHttpJsonController.java) |
 | JSON-RPC Controller | [`GatewayJsonRpcController`](../../a2a4j-gateway-spring-boot-starter/src/main/java/io/github/a2ap/gateway/spring/GatewayJsonRpcController.java) |
+| 请求关联 ID | [`GatewayRequestIdResolver`](../../a2a4j-gateway-spring-boot-starter/src/main/java/io/github/a2ap/gateway/spring/GatewayRequestIdResolver.java) |
 | HTTP+JSON Adapter | [`HttpJsonProtocolAdapter`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/protocol/HttpJsonProtocolAdapter.java) |
 | JSON-RPC Adapter | [`JsonRpcProtocolAdapter`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/protocol/JsonRpcProtocolAdapter.java) |
 | 转发编排 | [`GatewayForwarder`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/forwarding/GatewayForwarder.java) |

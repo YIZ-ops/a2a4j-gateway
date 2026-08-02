@@ -17,12 +17,36 @@
 package io.github.a2ap.gateway.api.model;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 /** Immutable mapping between a gateway task and its selected upstream instance. */
 public record TaskRoute(String tenantId, String gatewayTaskId, String gatewayContextId, String agentId,
         String instanceId, String interfaceKey, String upstreamTaskId, String upstreamContextId,
         String protocolBinding, String protocolVersion, String principalFingerprint, String idempotencyKey,
-        State state, Instant createdAt, Instant updatedAt, Instant expiresAt) {
+        State state, Instant createdAt, Instant updatedAt, Instant expiresAt, Map<String, Object> taskSnapshot,
+        Instant statusTimestamp) {
+
+    /** Preserves the original route constructor for SPI implementations. */
+    public TaskRoute(String tenantId, String gatewayTaskId, String gatewayContextId, String agentId,
+            String instanceId, String interfaceKey, String upstreamTaskId, String upstreamContextId,
+            String protocolBinding, String protocolVersion, String principalFingerprint, String idempotencyKey,
+            State state, Instant createdAt, Instant updatedAt, Instant expiresAt) {
+        this(tenantId, gatewayTaskId, gatewayContextId, agentId, instanceId, interfaceKey, upstreamTaskId,
+                upstreamContextId, protocolBinding, protocolVersion, principalFingerprint, idempotencyKey, state,
+                createdAt, updatedAt, expiresAt, Map.of(), updatedAt);
+    }
+
+    /** Preserves the snapshot-aware route constructor for SPI implementations. */
+    public TaskRoute(String tenantId, String gatewayTaskId, String gatewayContextId, String agentId,
+            String instanceId, String interfaceKey, String upstreamTaskId, String upstreamContextId,
+            String protocolBinding, String protocolVersion, String principalFingerprint, String idempotencyKey,
+            State state, Instant createdAt, Instant updatedAt, Instant expiresAt, Map<String, Object> taskSnapshot) {
+        this(tenantId, gatewayTaskId, gatewayContextId, agentId, instanceId, interfaceKey, upstreamTaskId,
+                upstreamContextId, protocolBinding, protocolVersion, principalFingerprint, idempotencyKey, state,
+                createdAt, updatedAt, expiresAt, taskSnapshot, updatedAt);
+    }
 
     /** Lifecycle states persisted by a task route store. */
     public enum State {
@@ -36,6 +60,12 @@ public record TaskRoute(String tenantId, String gatewayTaskId, String gatewayCon
         FAILED,
         /** Upstream task was canceled. */
         CANCELED,
+        /** Upstream Agent requires more user input. */
+        INPUT_REQUIRED,
+        /** Upstream Agent requires authentication. */
+        AUTH_REQUIRED,
+        /** Upstream Agent rejected the task. */
+        REJECTED,
         /** Upstream outcome could not be determined. */
         OUTCOME_UNKNOWN
     }
@@ -53,6 +83,9 @@ public record TaskRoute(String tenantId, String gatewayTaskId, String gatewayCon
         state = state == null ? State.PENDING : state;
         createdAt = createdAt == null ? Instant.now() : createdAt;
         updatedAt = updatedAt == null ? createdAt : updatedAt;
+        statusTimestamp = statusTimestamp == null ? updatedAt : statusTimestamp;
+        taskSnapshot = taskSnapshot == null ? Map.of()
+                : Collections.unmodifiableMap(new LinkedHashMap<>(taskSnapshot));
         if (expiresAt != null && expiresAt.isBefore(createdAt)) {
             throw new IllegalArgumentException("expiresAt must not be before createdAt");
         }
@@ -61,7 +94,7 @@ public record TaskRoute(String tenantId, String gatewayTaskId, String gatewayCon
     /** Returns whether this route is terminal. */
     public boolean terminal() {
         return state == State.COMPLETED || state == State.FAILED || state == State.CANCELED
-                || state == State.OUTCOME_UNKNOWN;
+                || state == State.REJECTED;
     }
 
     private static void requireText(String value, String name) {

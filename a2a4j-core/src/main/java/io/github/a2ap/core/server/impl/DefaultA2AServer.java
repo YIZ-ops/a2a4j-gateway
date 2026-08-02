@@ -16,7 +16,9 @@
 
 package io.github.a2ap.core.server.impl;
 
+import io.github.a2ap.core.exception.A2AError;
 import io.github.a2ap.core.model.AgentCard;
+import io.github.a2ap.core.model.Message;
 import io.github.a2ap.core.model.MessageSendParams;
 import io.github.a2ap.core.model.RequestContext;
 import io.github.a2ap.core.model.SendMessageResponse;
@@ -38,6 +40,9 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Implementation of the A2AServer interface. This class provides the core functionality
@@ -96,31 +101,52 @@ public class DefaultA2AServer implements A2AServer {
         // Create event queue for this task
         final EventQueue eventQueue = queueManager.create(taskContext.getTaskId());
 
-        // Execute agent and collect final result
-        eventQueue.enqueueEvent(currentTask);
-        Mono<SendMessageResponse> resultMono = agentExecutor.execute(taskContext, eventQueue)
-            .then(eventQueue.asFlux().flatMap(event -> {
-                if (event instanceof TaskStatusUpdateEvent) {
-                    return taskManager.applyStatusUpdate(currentTask, (TaskStatusUpdateEvent) event);
-                } else if (event instanceof TaskArtifactUpdateEvent) {
-                    return taskManager.applyArtifactUpdate(currentTask, (TaskArtifactUpdateEvent) event);
-                } else {
-                    return Mono.just(event);
-                }
-            }).filter(event -> !(event instanceof Task))
-                .cast(SendMessageResponse.class)
-                .next()
-                .doOnError(e -> log.error("Error in task {} updates stream via handleMessage: {}",
-                    taskContext.getTaskId(), e.getMessage(), e))
-                .doOnTerminate(() -> {
-                    log.debug("Agent execution completed for task: {}", taskContext.getTaskId());
-                    queueManager.remove(taskContext.getTaskId());
-                }));
+        taskManager.saveTask(currentTask).block();
+        Mono<SendMessageResponse> resultMono = executeAndCollect(taskContext, currentTask, eventQueue);
+
+        if (params.getConfiguration() != null
+                && Boolean.TRUE.equals(params.getConfiguration().getReturnImmediately())) {
+            resultMono.subscribe(ignored -> log.debug("Background task {} completed", taskContext.getTaskId()),
+                    error -> log.error("Background task {} failed: {}", taskContext.getTaskId(), error.getMessage(),
+                            error));
+            return currentTask;
+        }
 
         SendMessageResponse response = resultMono.block();
         response = response == null ? currentTask : response;
         log.info("Handle message success: {}", response);
         return response;
+    }
+
+    private Mono<SendMessageResponse> executeAndCollect(RequestContext taskContext, Task currentTask,
+            EventQueue eventQueue) {
+        AtomicReference<SendMessageResponse> latest = new AtomicReference<>(currentTask);
+        Flux<SendStreamingMessageResponse> updates = eventQueue.asFlux().concatMap(event -> {
+            if (event instanceof TaskStatusUpdateEvent statusUpdate) {
+                return taskManager.applyStatusUpdate(currentTask, statusUpdate)
+                        .doOnNext(latest::set).cast(SendStreamingMessageResponse.class);
+            }
+            if (event instanceof TaskArtifactUpdateEvent artifactUpdate) {
+                return taskManager.applyArtifactUpdate(currentTask, artifactUpdate)
+                        .doOnNext(latest::set).cast(SendStreamingMessageResponse.class);
+            }
+            if (event instanceof Task task) {
+                return taskManager.saveTask(task).doOnNext(latest::set).cast(SendStreamingMessageResponse.class);
+            }
+            if (event instanceof Message message) {
+                latest.set(message);
+            }
+            return Mono.just(event);
+        });
+        eventQueue.enqueueEvent(currentTask);
+        return Flux.merge(agentExecutor.execute(taskContext, eventQueue).thenMany(Flux.empty()), updates)
+                .then(Mono.fromSupplier(latest::get))
+                .doOnError(error -> log.error("Error in task {} updates stream via handleMessage: {}",
+                        taskContext.getTaskId(), error.getMessage(), error))
+                .doFinally(ignored -> {
+                    log.debug("Agent execution completed for task: {}", taskContext.getTaskId());
+                    queueManager.remove(taskContext.getTaskId());
+                });
     }
 
     @Override
@@ -139,21 +165,32 @@ public class DefaultA2AServer implements A2AServer {
         // Create event queue for this task
         final EventQueue eventQueue = queueManager.create(taskContext.getTaskId());
 
-        // Execute agent and collect final result
-        return Flux.merge(agentExecutor.execute(taskContext, eventQueue).thenMany(Mono.empty()), eventQueue.asFlux().doOnNext(event -> {
-            if (event instanceof TaskStatusUpdateEvent) {
-                taskManager.applyStatusUpdate(currentTask, (TaskStatusUpdateEvent) event).block();
-            } else if (event instanceof TaskArtifactUpdateEvent) {
-                taskManager.applyArtifactUpdate(currentTask, (TaskArtifactUpdateEvent) event).block();
+        Flux<SendStreamingMessageResponse> updates = eventQueue.asFlux().concatMap(event -> {
+            if (event instanceof TaskStatusUpdateEvent statusUpdate) {
+                return taskManager.applyStatusUpdate(currentTask, statusUpdate).thenReturn(event);
             }
-        }).doOnComplete(() -> log.debug("Task {} updates stream completed via handleMessageStream.",
-                taskContext.getTaskId()))
-            .doOnError(e -> log.error("Error in task {} updates stream via handleMessageStream: {}",
-                taskContext.getTaskId(), e.getMessage(), e))
-            .doOnTerminate(() -> {
-                log.debug("Agent execution completed for task: {}", taskContext.getTaskId());
-                queueManager.remove(taskContext.getTaskId());
-            }));
+            if (event instanceof TaskArtifactUpdateEvent artifactUpdate) {
+                return taskManager.applyArtifactUpdate(currentTask, artifactUpdate).thenReturn(event);
+            }
+            if (event instanceof Task task) {
+                return taskManager.saveTask(task).thenReturn(event);
+            }
+            return Mono.just(event);
+        });
+
+        // A2A 1.0 task lifecycle streams begin with the current Task, followed by updates.
+        return taskManager.saveTask(currentTask)
+                .thenMany(Flux.concat(
+                        Flux.<SendStreamingMessageResponse>just(currentTask),
+                        Flux.merge(agentExecutor.execute(taskContext, eventQueue).thenMany(Flux.empty()), updates)))
+                .doOnComplete(() -> log.debug("Task {} updates stream completed via handleMessageStream.",
+                        taskContext.getTaskId()))
+                .doOnError(e -> log.error("Error in task {} updates stream via handleMessageStream: {}",
+                        taskContext.getTaskId(), e.getMessage(), e))
+                .doFinally(ignored -> {
+                    log.debug("Agent execution completed for task: {}", taskContext.getTaskId());
+                    queueManager.remove(taskContext.getTaskId());
+                });
     }
 
     /**
@@ -203,6 +240,7 @@ public class DefaultA2AServer implements A2AServer {
         if (eventQueue != null) {
             TaskStatusUpdateEvent event = TaskStatusUpdateEvent.builder()
                 .taskId(taskId)
+                .contextId(cancelledTask.getContextId())
                 .status(taskStatus)
                 .build();
             eventQueue.enqueueEvent(event);
@@ -263,39 +301,81 @@ public class DefaultA2AServer implements A2AServer {
     public Flux<SendStreamingMessageResponse> subscribeToTaskUpdates(String taskId) {
         log.info("Subscribing to task updates for ID: {}", taskId);
 
-        // check the task
+        // Validate the task before attaching to its live event queue.
         Task task = taskManager.getTask(taskId);
         if (task == null) {
             log.warn("Task with ID {} not found for subscription.", taskId);
-            return Flux.error(new IllegalArgumentException("Task not found: " + taskId));
+            return Flux.error(new A2AError("Task not found: " + taskId,
+                    A2AError.PROTOCOL_TASK_NOT_FOUND, Map.of("taskId", taskId), taskId));
         }
 
-        // if the task is finish, return
         TaskState state = task.getStatus().getState();
-        if (state == TaskState.COMPLETED || state == TaskState.FAILED || state == TaskState.CANCELED
-            || state == TaskState.REJECTED) {
-            log.info("Task {} is in final state {}, returning final status.", taskId, state);
-            TaskStatusUpdateEvent finalEvent = TaskStatusUpdateEvent.builder()
-                .taskId(taskId)
-                .status(task.getStatus())
-                .build();
-            return Flux.just(finalEvent);
+        if (isTerminal(state)) {
+            return terminalSubscriptionError(taskId, state);
         }
 
-        // for the task is process, try tap the current event queue
+        // Tap first so updates emitted while the current Task snapshot is prepared are buffered.
         EventQueue eventQueue = queueManager.tap(taskId);
-        if (eventQueue != null) {
-            log.debug("Task {} is in progress, subscribing to updates via tapped queue.", taskId);
-            return eventQueue.asFlux()
-                .doOnSubscribe(
-                    s -> log.debug("Subscriber attached to task {} updates via subscribeToTaskUpdates.", taskId))
-                .doOnComplete(() -> log.debug("Task {} updates stream completed via subscribeToTaskUpdates.", taskId))
-                .doOnError(e -> log.error("Error in task {} updates stream via subscribeToTaskUpdates: {}", taskId,
-                    e.getMessage(), e));
-        } else {
+        if (eventQueue == null) {
             log.warn("No active event queue found for task {}.", taskId);
-            return Flux.empty();
+            Task latest = taskManager.getTask(taskId);
+            if (latest != null && isTerminal(latest.getStatus().getState())) {
+                return terminalSubscriptionError(taskId, latest.getStatus().getState());
+            }
+            return Flux.error(new A2AError("Task does not have an active update stream: " + taskId,
+                    A2AError.UNSUPPORTED_OPERATION, Map.of("taskId", taskId), taskId));
         }
+
+        Task current = taskManager.getTask(taskId);
+        if (current == null) {
+            return Flux.error(new A2AError("Task not found: " + taskId,
+                    A2AError.PROTOCOL_TASK_NOT_FOUND, Map.of("taskId", taskId), taskId));
+        }
+        if (isTerminal(current.getStatus().getState())) {
+            return terminalSubscriptionError(taskId, current.getStatus().getState());
+        }
+
+        String contextId = current.getContextId();
+        Flux<SendStreamingMessageResponse> updates = eventQueue.asFlux()
+                .map(event -> ensureContextId(event, contextId));
+        log.debug("Task {} is in progress, subscribing to updates via tapped queue.", taskId);
+        return Flux.concat(Flux.just(snapshot(current)), updates)
+            .doOnSubscribe(s -> log.debug(
+                    "Subscriber attached to task {} updates via subscribeToTaskUpdates.", taskId))
+            .doOnComplete(() -> log.debug("Task {} updates stream completed via subscribeToTaskUpdates.", taskId))
+            .doOnError(e -> log.error("Error in task {} updates stream via subscribeToTaskUpdates: {}", taskId,
+                e.getMessage(), e));
+    }
+
+    private boolean isTerminal(TaskState state) {
+        return state == TaskState.COMPLETED || state == TaskState.FAILED || state == TaskState.CANCELED
+                || state == TaskState.REJECTED;
+    }
+
+    private Flux<SendStreamingMessageResponse> terminalSubscriptionError(String taskId, TaskState state) {
+        log.info("Task {} is in terminal state {}; subscription is not supported.", taskId, state);
+        return Flux.error(new A2AError("Cannot subscribe to task in terminal state: " + state,
+                A2AError.UNSUPPORTED_OPERATION, Map.of("taskId", taskId, "state", state.name()), taskId));
+    }
+
+    private SendStreamingMessageResponse ensureContextId(SendStreamingMessageResponse event, String contextId) {
+        if (event instanceof TaskStatusUpdateEvent statusUpdate && statusUpdate.getContextId() == null) {
+            statusUpdate.setContextId(contextId);
+        } else if (event instanceof TaskArtifactUpdateEvent artifactUpdate && artifactUpdate.getContextId() == null) {
+            artifactUpdate.setContextId(contextId);
+        }
+        return event;
+    }
+
+    private Task snapshot(Task task) {
+        return Task.builder()
+                .id(task.getId())
+                .contextId(task.getContextId())
+                .status(task.getStatus())
+                .artifacts(task.getArtifacts() == null ? null : List.copyOf(task.getArtifacts()))
+                .history(task.getHistory() == null ? null : List.copyOf(task.getHistory()))
+                .metadata(task.getMetadata() == null ? null : Map.copyOf(task.getMetadata()))
+                .build();
     }
 
     /**

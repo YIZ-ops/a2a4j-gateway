@@ -132,7 +132,8 @@ public class GatewaySecurityAutoConfiguration {
                 .formLogin(ServerHttpSecurity.FormLoginSpec::disable)
                 .exceptionHandling(exceptions -> exceptions
                         .authenticationEntryPoint(new HttpStatusServerEntryPoint(HttpStatus.UNAUTHORIZED)))
-                .authorizeExchange(exchanges -> exchanges.pathMatchers("/actuator/health/**", "/actuator/info")
+                .authorizeExchange(exchanges -> exchanges.pathMatchers("/actuator/health/**", "/actuator/info",
+                        "/.well-known/agent-card.json", "/.well-known/agents/**")
                         .permitAll().anyExchange().authenticated());
     }
 

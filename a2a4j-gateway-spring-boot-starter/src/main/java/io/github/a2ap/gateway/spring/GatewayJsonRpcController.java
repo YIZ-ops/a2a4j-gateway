@@ -17,7 +17,9 @@
 package io.github.a2ap.gateway.spring;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.a2ap.gateway.api.GatewayHeaders;
 import io.github.a2ap.gateway.api.GatewayTraceContext;
 import io.github.a2ap.gateway.api.model.GatewayCommand;
@@ -39,7 +41,6 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.UUID;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.ServerSentEvent;
@@ -70,6 +71,8 @@ public final class GatewayJsonRpcController {
 
     private final GatewayMetrics metrics;
 
+    private final GatewayAgentCatalogController catalog;
+
     /** Creates a JSON-RPC controller with no-op observability sinks. */
     public GatewayJsonRpcController(GatewayForwarder forwarder, JsonRpcProtocolAdapter adapter,
             GatewayProperties properties) {
@@ -79,11 +82,19 @@ public final class GatewayJsonRpcController {
     /** Creates a JSON-RPC controller with replaceable observability sinks. */
     public GatewayJsonRpcController(GatewayForwarder forwarder, JsonRpcProtocolAdapter adapter,
             GatewayProperties properties, GatewayAuditSink auditSink, GatewayMetrics metrics) {
+        this(forwarder, adapter, properties, auditSink, metrics, null);
+    }
+
+    /** Creates the controller with the gateway Card projector used for extended Cards. */
+    public GatewayJsonRpcController(GatewayForwarder forwarder, JsonRpcProtocolAdapter adapter,
+            GatewayProperties properties, GatewayAuditSink auditSink, GatewayMetrics metrics,
+            GatewayAgentCatalogController catalog) {
         this.forwarder = forwarder;
         this.adapter = adapter;
         this.properties = properties;
         this.objectMapper = new ObjectMapper();
         this.eventEncoder = new GatewayEventSseEncoder(objectMapper);
+        this.catalog = catalog;
         this.auditSink = auditSink == null ? GatewayAuditSink.noop() : auditSink;
         this.metrics = metrics == null ? GatewayMetrics.noop() : metrics;
     }
@@ -102,9 +113,21 @@ public final class GatewayJsonRpcController {
                     Instant started = Instant.now();
                     return forwarder.forward(command, routingContext(exchange))
                             .doOnSuccess(result -> recordAudit(command, result, null, exchange, started))
-                            .doOnError(error -> recordAudit(command, null, error, exchange, started));
-                })
-                .map(this::toResponse));
+                            .doOnError(error -> recordAudit(command, null, error, exchange, started))
+                            .flatMap(result -> projectResponse(result, command, exchange));
+                }));
+    }
+
+    private Mono<ResponseEntity<byte[]>> projectResponse(GatewayResult result, GatewayCommand command,
+            ServerWebExchange exchange) {
+        if (catalog == null || command.operation() != GatewayCommand.Operation.GET_EXTENDED_AGENT_CARD
+                || !result.success()) {
+            return Mono.just(toResponse(toJsonRpcBinding(result, command)));
+        }
+        return catalog.projectExtendedCard(command.targetHint().agentId(), exchange, result.payload())
+                .map(projected -> toResponse(toJsonRpcBinding(
+                        new GatewayResult(true, projected, result.errorCode(), result.metadata()), command)))
+                .onErrorResume(ignored -> Mono.just(toResponse(toJsonRpcBinding(result, command))));
     }
 
     /** Handles a streaming JSON-RPC request as server-sent events. */
@@ -119,7 +142,7 @@ public final class GatewayJsonRpcController {
                                 "JSON-RPC method is not stream-capable"));
                     }
                     return forwarder.stream(command, routingContext(exchange))
-                            .map(this::toSse)
+                            .map(event -> toSse(event, command))
                             .doOnSubscribe(ignored -> recordAudit(command, null, null, exchange, Instant.now()))
                             .doOnError(error -> recordAudit(command, null, error, exchange, Instant.now()));
                 }));
@@ -140,6 +163,16 @@ public final class GatewayJsonRpcController {
             }
             if (agentId != null && !agentId.isBlank()) {
                 headers.put(GatewayHeaders.TARGET_AGENT, agentId);
+            }
+            try {
+                com.fasterxml.jackson.databind.JsonNode request = objectMapper.readTree(payload);
+                if (request != null && request.has("id") && !request.get("id").isNull()) {
+                    exchange.getAttributes().put("a2a.jsonrpc.id",
+                            objectMapper.convertValue(request.get("id"), Object.class));
+                }
+            }
+            catch (JsonProcessingException | RuntimeException ignored) {
+                // The adapter will produce the protocol error for malformed JSON.
             }
             ProtocolDescriptor protocol = streaming ? ProtocolDescriptor.jsonRpcStreaming()
                     : ProtocolDescriptor.jsonRpc();
@@ -163,10 +196,12 @@ public final class GatewayJsonRpcController {
         }
     }
 
-    private ServerSentEvent<String> toSse(GatewayEvent event) {
+    private ServerSentEvent<String> toSse(GatewayEvent event, GatewayCommand command) {
         SseEvent encoded = eventEncoder.encode(event);
         try {
-            String body = objectMapper.writeValueAsString(event.payload());
+            String body = "HTTP+JSON".equals(event.metadata().get("upstreamBinding"))
+                    ? jsonRpcEnvelope(event.payload(), command.metadata().get("jsonRpcId"))
+                    : objectMapper.writeValueAsString(event.payload());
             ServerSentEvent.Builder<String> builder = ServerSentEvent.builder(body).event(encoded.event());
             if (encoded.id() != null) {
                 builder.id(encoded.id());
@@ -179,6 +214,40 @@ public final class GatewayJsonRpcController {
         catch (JsonProcessingException ex) {
             throw new GatewayHttpException(502, "GATEWAY_SERIALIZATION_ERROR", "could not serialize JSON-RPC event");
         }
+    }
+
+    private GatewayResult toJsonRpcBinding(GatewayResult result, GatewayCommand command) {
+        if (!result.success() || !"HTTP+JSON".equals(result.metadata().get("upstreamBinding"))) {
+            return result;
+        }
+        try {
+            JsonNode payload = result.payload() instanceof String value ? objectMapper.readTree(value)
+                    : objectMapper.valueToTree(result.payload());
+            if (payload != null && payload.isObject() && payload.has("jsonrpc")) {
+                return result;
+            }
+            return new GatewayResult(true, jsonRpcEnvelope(payload, command.metadata().get("jsonRpcId")),
+                    result.errorCode(), result.metadata());
+        }
+        catch (JsonProcessingException | IllegalArgumentException ex) {
+            throw new GatewayHttpException(502, "GATEWAY_SERIALIZATION_ERROR",
+                    "could not convert HTTP+JSON response to JSON-RPC");
+        }
+    }
+
+    private String jsonRpcEnvelope(Object payload, Object id) throws JsonProcessingException {
+        JsonNode node = payload instanceof JsonNode jsonNode ? jsonNode
+                : payload instanceof String value ? objectMapper.readTree(value) : objectMapper.valueToTree(payload);
+        ObjectNode envelope = objectMapper.createObjectNode();
+        envelope.put("jsonrpc", "2.0");
+        envelope.set("id", objectMapper.valueToTree(id));
+        if (node != null && node.isObject() && node.has("error")) {
+            envelope.set("error", node.get("error"));
+        }
+        else {
+            envelope.set("result", node == null ? objectMapper.nullNode() : node);
+        }
+        return objectMapper.writeValueAsString(envelope);
     }
 
     private Mono<PrincipalContext> principal(ServerWebExchange exchange) {
@@ -238,8 +307,7 @@ public final class GatewayJsonRpcController {
     }
 
     private String requestId(ServerWebExchange exchange) {
-        String requestId = exchange.getRequest().getHeaders().getFirst(GatewayHeaders.GATEWAY_REQUEST_ID);
-        return requestId == null || requestId.isBlank() ? UUID.randomUUID().toString() : requestId;
+        return GatewayRequestIdResolver.resolve(exchange);
     }
 
     private boolean isStreaming(GatewayCommand.Operation operation) {

@@ -22,6 +22,8 @@ import io.github.a2ap.gateway.api.model.TaskRouteQuery;
 import io.github.a2ap.gateway.api.spi.TaskRouteStore;
 import java.time.Clock;
 import java.time.Instant;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -68,19 +70,29 @@ public final class InMemoryTaskRouteStore implements TaskRouteStore {
         List<TaskRoute> filtered = routes.values().stream()
                 .filter(route -> route.tenantId().equals(query.tenantId()))
                 .filter(route -> query.gatewayTaskId() == null || route.gatewayTaskId().equals(query.gatewayTaskId()))
+                .filter(route -> query.gatewayContextId() == null
+                        || query.gatewayContextId().equals(route.gatewayContextId()))
+                .filter(route -> query.principalFingerprint() == null
+                        || query.principalFingerprint().equals(route.principalFingerprint()))
                 .filter(route -> query.agentId() == null || route.agentId().equals(query.agentId()))
                 .filter(route -> query.states().isEmpty() || query.states().contains(route.state()))
-                .sorted(Comparator.comparing(TaskRoute::updatedAt).reversed()
+                .filter(route -> query.statusTimestampAfter() == null
+                        || !route.statusTimestamp().isBefore(query.statusTimestampAfter()))
+                .sorted(Comparator.comparing(TaskRoute::statusTimestamp).reversed()
                         .thenComparing(TaskRoute::gatewayTaskId))
                 .toList();
-        int offset = parsePageToken(query.pageToken());
         int pageSize = query.pageSize() == 0 ? 100 : query.pageSize();
-        if (offset >= filtered.size()) {
-            return Mono.just(new TaskRoutePage(List.of(), null));
+        int totalSize = filtered.size();
+        Cursor cursor = parsePageToken(query.pageToken());
+        if (cursor != null) {
+            filtered = filtered.stream().filter(route -> isAfter(route, cursor)).toList();
         }
-        int end = Math.min(filtered.size(), offset + pageSize);
-        String next = end < filtered.size() ? Integer.toString(end) : null;
-        return Mono.just(new TaskRoutePage(filtered.subList(offset, end), next));
+        if (filtered.isEmpty()) {
+            return Mono.just(new TaskRoutePage(List.of(), null, totalSize));
+        }
+        int end = Math.min(filtered.size(), pageSize);
+        String next = end < filtered.size() ? encodeCursor(filtered.get(end - 1)) : null;
+        return Mono.just(new TaskRoutePage(filtered.subList(0, end), next, totalSize));
     }
 
     @Override
@@ -134,7 +146,8 @@ public final class InMemoryTaskRouteStore implements TaskRouteStore {
         return new TaskRoute(route.tenantId(), route.gatewayTaskId(), route.gatewayContextId(), route.agentId(),
                 route.instanceId(), route.interfaceKey(), route.upstreamTaskId(), route.upstreamContextId(),
                 route.protocolBinding(), route.protocolVersion(), route.principalFingerprint(),
-                route.idempotencyKey(), state, route.createdAt(), updatedAt, expiresAt);
+                route.idempotencyKey(), state, route.createdAt(), updatedAt, expiresAt, route.taskSnapshot(),
+                route.statusTimestamp());
     }
 
     private void purgeExpired() {
@@ -147,20 +160,34 @@ public final class InMemoryTaskRouteStore implements TaskRouteStore {
         });
     }
 
-    private int parsePageToken(String pageToken) {
+    private Cursor parsePageToken(String pageToken) {
         if (pageToken == null || pageToken.isBlank()) {
-            return 0;
+            return null;
         }
         try {
-            int offset = Integer.parseInt(pageToken);
-            if (offset < 0) {
-                throw new NumberFormatException();
+            String decoded = new String(Base64.getUrlDecoder().decode(pageToken), StandardCharsets.UTF_8);
+            int separator = decoded.indexOf('\u0000');
+            if (separator < 1 || separator == decoded.length() - 1) {
+                throw new IllegalArgumentException();
             }
-            return offset;
+            return new Cursor(Instant.parse(decoded.substring(0, separator)), decoded.substring(separator + 1));
         }
-        catch (NumberFormatException ex) {
+        catch (RuntimeException ex) {
             throw new IllegalArgumentException("invalid task route page token");
         }
+    }
+
+    private boolean isAfter(TaskRoute route, Cursor cursor) {
+        int timestamp = route.statusTimestamp().compareTo(cursor.statusTimestamp());
+        return timestamp < 0 || timestamp == 0 && route.gatewayTaskId().compareTo(cursor.gatewayTaskId()) > 0;
+    }
+
+    private String encodeCursor(TaskRoute route) {
+        String value = route.statusTimestamp() + "\u0000" + route.gatewayTaskId();
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(value.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private record Cursor(Instant statusTimestamp, String gatewayTaskId) {
     }
 
     private static String key(String tenantId, String gatewayTaskId) {

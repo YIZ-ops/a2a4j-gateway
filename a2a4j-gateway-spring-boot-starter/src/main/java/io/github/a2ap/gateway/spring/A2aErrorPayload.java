@@ -59,6 +59,10 @@ final class A2aErrorPayload {
             case "GATEWAY_POLICY_DENIED" -> "PERMISSION_DENIED";
             case "GATEWAY_AGENT_UNAVAILABLE" -> "AGENT_UNAVAILABLE";
             case "GATEWAY_ROUTE_NOT_FOUND" -> "TASK_NOT_FOUND";
+            case "TASK_NOT_FOUND" -> "TASK_NOT_FOUND";
+            case "PUSH_NOTIFICATION_NOT_SUPPORTED" -> "PUSH_NOTIFICATION_NOT_SUPPORTED";
+            case "UNSUPPORTED_OPERATION" -> "UNSUPPORTED_OPERATION";
+            case "EXTENDED_AGENT_CARD_NOT_CONFIGURED" -> "EXTENDED_AGENT_CARD_NOT_CONFIGURED";
             case "UNAUTHENTICATED" -> "UNAUTHENTICATED";
             default -> gatewayCode;
         };
@@ -74,6 +78,7 @@ final class A2aErrorPayload {
             case 413 -> "RESOURCE_EXHAUSTED";
             case 429 -> "RESOURCE_EXHAUSTED";
             case 500 -> "INTERNAL";
+            case 501 -> "NOT_IMPLEMENTED";
             case 502 -> "BAD_GATEWAY";
             case 503 -> "UNAVAILABLE";
             case 504 -> "DEADLINE_EXCEEDED";

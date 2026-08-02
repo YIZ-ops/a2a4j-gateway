@@ -1,333 +1,230 @@
-# Agent Gateway MVP 实施清单
+# Agent Gateway MVP 状态、验收与后续 Backlog
 
-## 1. 交付策略
+## 1. 文档职责
 
-按纵向可运行增量实施。每个增量都必须包含代码、自动化测试、示例配置和最小文档，
-不先堆完所有接口再集成。
+本文是 Gateway MVP 实施状态、验收证据、发布门槛和后续工作的唯一入口。架构、接口、配置和运行说明分别见：
 
-## 1.1 当前实施进度（2026-08-01）
+- [架构与详细设计](./architecture.md)
+- [API 参考](./api-reference.md)
+- [配置指南](./configuration.md)
+- [请求转发链路](./request-forwarding-flow.md)
+- [外部 Agent 接入](./external-agent-integration.md)
+- [运行手册](./runbook.md)
 
-| 增量 | 状态 | 交付物与验证 |
+原独立验收审计和性能快照的必要内容已经并入本文，不再分别维护，避免阶段状态和测试数量相互漂移。
+
+## 2. 当前结论
+
+代码基线：A2A4J `0.0.1`、Java 17 源码级别、Spring Boot 3.5.16、A2A `1.0`。
+
+截至 2026-08-02：
+
+- G0～G9 的 MVP 功能已经落地；
+- JSON-RPC、HTTP+JSON、SSE、11 个 JSON-RPC 方法和 27 个 HTTP 路由变体已经实现；
+- Core、Client、Server Starter、Samples 与 Gateway 的运行时 Wire 均为 A2A 1.0；
+- 全仓 `mvnw.cmd test` 已通过，Proto SHA-256 lock 契约不再阻塞构建；
+- 本轮没有运行性能测试、OSV 扫描或多进程 smoke，不能把历史结果当作当前发布证明；
+- 当前默认状态是单进程内存实现，不宣称多副本恢复或生产高可用。
+
+MVP 功能可用于集成验证。正式发布前仍应根据目标版本重新运行 package、依赖安全扫描、多进程 smoke，并在需要容量
+承诺时才运行目标环境性能测试。
+
+## 3. 增量状态
+
+| 增量 | 状态 | 当前交付 |
 | --- | --- | --- |
-| G0.1 官方协议锁定 | 已完成 | `specification/a2a.proto`、`a2a-1.0.0.lock`、SHA-256 锁定 |
-| G0.2 1.0 契约基线 | 已完成 | `A2AProtocolV1`、字段级 Agent Card/JSON-RPC 校验器、7 个 golden fixtures |
-| G0.3 Gateway 模块骨架 | 已完成 | API/Core/Spring Boot Starter，父 POM 与 BOM 已纳入 |
-| G0.4 Gateway 命名契约 | 已完成 | Header、metadata、A2A 1.0 错误码和协议注册 SPI |
-| G0.5 主线 Wire 迁移 | 已完成 | `DefaultA2AClient`、`DefaultDispatcher`、Server Starter、Samples 已切换到 A2A 1.0 方法名/Agent Card 路径；`DefaultA2AClientProtocolV1Test` 和 legacy method rejection contract 覆盖 |
-| G0.6 规范文档迁移 | 已完成 | canonical `specification.md` 已切换为 A2A 1.0.0，旧快照保留为 `specification-0.2.1.md`，Proto lock 和兼容入口已落地 |
-| G1 领域模型与 SPI | 已完成 | 不可变模型、异步 SPI、TCK 风格契约测试已落地 |
-| G2 注册、发现和健康 | 已完成 | YAML 配置校验、Card 拉取/规范化/hash、原子注册快照、主动/被动健康、URL/DNS/IP/CIDR/响应大小策略、Actuator 指标、租户隔离目录 API及自动化测试 |
-| G3 鉴权、租户与策略 | 已完成 | WebFlux JWT Resource Server、issuer/audience/签名/时间校验、可信 Claim 映射、Agent/Skill/Task 授权、默认关闭 API Key、`env://` 凭据 provider、统一脱敏及自动化测试 |
-| G4 路由与负载均衡 | 已完成 | 任务粘滞、显式 Agent/Skill/标签/租户默认路由、冲突候选错误、加权最少在途、实例 bulkhead、熔断半开、双实例真实分布和可审计 `RouteDecision` |
-| G5 非流式转发 | 已完成 | JSON-RPC 1.0 转发、Task/Context ID 重写、粘滞路由、幂等、超时/错误分类、有界 Store |
-| G6 SSE 与任务订阅 | 已完成 | 逐事件桥接、取消传播、续订、空闲/事件大小/租户并发限制；200 并发和客户端取消 E2E 已补 |
-| G7 HTTP+JSON 数据面 | 已完成 | HTTP+JSON/JSON-RPC 双入口、任务操作、目录 API、Binding 转换、统一错误 envelope、WebFlux 路由、双上游 selector、真实上游 E2E、真实 JWT Resource Server 过滤链和双入口权限等价矩阵 |
-| G8 可观测性与运维 | 已完成 | Micrometer、审计、Trace Context、健康检查、Runbook、默认 Store 容量/占用/淘汰/过期指标 |
-| G9 发布与兼容性 | 已完成 | Sample、配置/JWT/smoke、发布说明、A2A 1.0 Wire 迁移、OSV/secret/nonblocking 门禁和性能基线 |
+| G0 协议与工程基线 | 完成 | A2A 1.0 Proto/lock、契约校验、Gateway API/Core/Starter 模块、Client/Server/Sample Wire 迁移 |
+| G1 模型与 SPI | 完成 | 不可变 Gateway 模型及 Registry、Routing、Transport、Store、Security、Observability SPI |
+| G2 注册、发现与健康 | 完成 | YAML 注册、Card 拉取/校验/hash/周期刷新、Card 失败健康状态、SSRF、目录与健康指标 |
+| G3 安全 | 完成 | JWT/API Key、租户与主体映射、Agent/Skill/Task 权限、`env://` 出站凭据和脱敏 |
+| G4 路由与实例选择 | 完成 | Task/Context 亲和、显式 Agent、精确 Skill、默认 Agent、内部标签、加权最少在途、bulkhead、熔断 |
+| G5 非流式转发 | 完成 | JSON-RPC/HTTP+JSON 转发、协议转换、Task/Context ID 隔离、幂等、有界 Store、错误映射 |
+| G6 SSE | 完成 | 流式发送、任务订阅、事件改写、取消传播、事件/空闲/租户并发限制和 200 流 E2E |
+| G7 完整数据面 | 完成 | 11 个 JSON-RPC 方法、27 个 HTTP 路由变体、Push、Extended Card、ListTasks 本地快照与 Binding 等价测试 |
+| G8 可观测与运维 | 完成 | Micrometer、Store 指标、结构化审计、request ID、W3C Trace Context、Actuator Health 和 Runbook |
+| G9 Sample 与发布准备 | 功能完成 | 双 Agent + Gateway Sample、中文 README、配置/JWT/API/外部接入文档及可复跑门禁脚本 |
 
-当前验证基线：`tools/g10-release-gates.ps1` 已通过，覆盖全量测试、package、diff/secret/nonblocking 扫描、OSV
-依赖漏洞扫描、隔离端口 smoke 和 80/40/8 性能基线；报告为 `target/release-gates/mvp-release-gates.json`，可复跑证据见
-[`mvp-performance-2026-08-01.md`](./mvp-performance-2026-08-01.md) 与 [`mvp-dependency-scan-2026-08-01.md`](./mvp-dependency-scan-2026-08-01.md)。
+“完成”表示仓库内 MVP 功能和自动化测试存在，不表示企业级能力已经提供。gRPC、共享状态、动态注册、OTel spans、
+生产 Secret Provider 和分布式配额仍属于 MVP 之后的工作。
 
-### 文档一致性修订（2026-08-01）
+## 4. 已交付能力清单
 
-- 已同步 `docs/agent-gateway/configuration.md`、`architecture.md` 与当前 Gateway/Card 实现：修正 echo-a 上游端点、JSON-RPC Binding、Skill 归属、A2A-Version 缺省行为、错误码映射及 SSE 多事件说明。
-- 已同步 server/client sample 的中英文 README：修正客户端不会自动发送消息的描述，补充 Card `supportedInterfaces`、JSONRPC-only 配置要求及实际调用入口。
+### 4.1 协议和入口
 
-## 2. Epic 与任务
+- [x] 固定 A2A 1.0 Proto、lock 和 Agent Card/JSON-RPC fixtures；
+- [x] 拒绝旧 A2A 0.2.x 方法和 Card 结构，不做静默降级；
+- [x] 提供 JSON-RPC 同步与 SSE 入口；
+- [x] 提供 HTTP+JSON 规范短路径、`/gateway/v1` 和 Agent-specific 路径；
+- [x] 支持 JSON-RPC 与 HTTP+JSON 双向转换；
+- [x] 支持 Send、Get/List/Cancel/Subscribe、四个 Push 配置方法和 Extended Agent Card；
+- [x] 在流式首帧前处理上游非 2xx，不把失败伪装成成功 SSE。
 
-### G0：基线与契约
+### 4.2 发现和路由
 
-- [x] 固定 A2A `1.0` 官方规范、`a2a.proto` 发布版本和文件校验值；
-- [x] 将本地 `specification` 快照升级到 A2A `1.0`：canonical `specification.md`、`a2a.proto` 和 `a2a-1.0.0.lock` 对齐；
-- [x] 依据官方 Proto 逐字段校验 `a2a4j-core` 1.0 Wire 契约；
-- [x] 为 `SendMessage`、`SendStreamingMessage`、`GetTask`、`ListTasks`、
-  `CancelTask`、`SubscribeToTask` 建立 1.0 golden tests；
-- [x] 迁移 Client、Server Starter 和 Samples 到 A2A 1.0 method/path；legacy 0.2.1 method 仅保留 rejection contract，不作为运行时 Wire；
-- [x] 增加 Gateway 模块到父 POM 和 BOM；
-- [x] 建立 Gateway 错误码、Header、metadata 命名常量；
-- [x] 根构建同时运行 Core、Client、Server 和 Gateway 测试（CI 工作流沿用根构建命令）。
+- [x] 从静态配置注册逻辑 Agent 和实例；
+- [x] 拉取、校验、规范化并周期刷新 Agent Card；
+- [x] 校验 Card URL 和接口 URL 的 scheme、DNS/IP/CIDR 与响应大小；
+- [x] 支持 Task、Context、显式 Agent、精确 Skill 和租户默认 Agent 路由；
+- [x] 路径 Agent 与 Header Agent 冲突时拒绝请求；
+- [x] 公开 HTTP Adapter 不接受任意标签，标签仅供受信任扩展命令使用；
+- [x] 新任务使用加权最少在途选择，已有任务固定实例和接口。
 
-退出条件：A2A4J 主线可按 1.0 模型构建，升级后的 Samples 可互通，空 Gateway
-模块可构建，协议样本可重复验证。
+### 4.3 任务和流式语义
 
-### G1：领域模型与 SPI
+- [x] Gateway Task/Context ID 与上游 ID 分离并递归改写；
+- [x] `returnImmediately` 原样转发，不把同步请求转换成流；
+- [x] `SubscribeToTask` 保持 Context ID，终态任务返回 Unsupported Operation；
+- [x] `ListTasks` 从本地 Task Route 快照分页，不调用外部 Agent；
+- [x] 保存状态时间、History 和 Artifact；Artifact append 合并 parts；
+- [x] 下游取消传播到 Reactor 上游并释放在途计数；
+- [x] 幂等记录区分 IN_FLIGHT、COMPLETED 和 OUTCOME_UNKNOWN。
 
-- [x] 实现不可变 `AgentDefinition`、`AgentInstance`；
-- [x] 实现 `GatewayCommand`、`GatewayEvent`、`RoutingContext`；
-- [x] 定义 `AgentRegistry`、`RouteResolver`、`AgentLoadBalancer`、
-  `AgentInterfaceSelector`；
-- [x] 定义 `ProtocolAdapter`、`AgentTransport`；
-- [x] 定义 `TaskRouteStore`、`CredentialProvider`、`AuthorizationPolicy`；
-- [x] 为 SPI 编写 TCK 风格的共享契约测试。
+### 4.4 安全和资源边界
 
-退出条件：核心模块不依赖 Spring，所有网络和存储边界均可替换。
+- [x] JWT issuer/JWK、audience、时间、tenant/subject/authority Claim 校验；
+- [x] 开发 API Key 默认关闭，secret 只从环境变量读取；
+- [x] Agent、Skill、Task Read/Cancel 和 Extended Card 权限矩阵；
+- [x] 入站身份与出站身份分离，不默认透传调用方 Token；
+- [x] 请求、Card、响应和 SSE 单事件大小限制；
+- [x] Card、连接、普通响应和 SSE 空闲超时；
+- [x] 不对写请求执行跨实例自动重试；
+- [x] 默认 Store 有 TTL、容量、淘汰和过期指标。
 
-### G2：注册、发现和健康
+### 4.5 可观测与示例
 
-- [x] 实现 YAML Agent 配置绑定和启动校验；
-- [x] 实现 A2A `1.0` Agent Card 拉取与规范化；
-- [x] 校验 `supportedInterfaces`、Binding、`protocolVersion` 和
-  请求头 `A2A-Version: 1.0`；
-- [x] 实现 Card hash、定时刷新和原子快照；
-- [x] 实现主动健康检查和被动失败记录；
-- [x] 实现受控 URL、DNS/IP、CIDR 和响应大小校验；
-- [x] 提供 tenant-scoped `AgentRegistry` 列表、详情和 Skill 查询 SPI；
-- [x] 暴露 Agent 健康 Actuator 信息，并通过带鉴权的 G3/G7 入口提供租户隔离目录查询。
+- [x] request ID 在 Access Audit 与数据面审计之间复用；
+- [x] 合法 W3C `traceparent`/`tracestate` 透传；
+- [x] 请求、流、协议错误和 Store 指标；
+- [x] Agent 与上游依赖 HealthIndicator；
+- [x] `gateway-hello-world` 连接两个独立 `server-hello-world` Agent；
+- [x] Sample 与各子项目只保留中文版 `README.md`。
 
-退出条件：两个逻辑 Agent、每个两个实例可被发现，故障实例不会接收新任务。
+## 5. 验收矩阵
 
-### G3：鉴权、租户与策略
-
-- [x] 集成 Spring Security WebFlux Resource Server；
-- [x] 校验 issuer、audience、签名和时间 Claim；
-- [x] 从可信 Claim 生成 `tenantId` 和权限；
-- [x] 实现 Agent/Skill/Task 基础授权；
-- [x] 实现开发模式 API Key，并确保默认关闭；
-- [x] 实现凭据引用和环境变量 provider；
-- [x] 对 Header、日志和异常统一脱敏。
-
-退出条件：安全过滤链和策略 SPI 已可复用；跨租户发现、调用、任务查询和取消的拒绝规则有单元测试，
-下游凭据与入站 Token 隔离。实际 HTTP 资源门面随 G7 数据面入口落地。
-
-### G4：路由与负载均衡
-
-- [x] 实现显式 URL Agent 路由；
-- [x] 实现 `X-A2A-Target-Agent` 和 `X-A2A-Target-Skill`；
-- [x] 实现精确 Skill、标签约束和租户默认 Agent；
-- [x] 实现冲突检测和候选错误；
-- [x] 实现加权最少在途负载均衡；
-- [x] 实现实例 bulkhead 和熔断状态；
-- [x] 为每次决策生成可审计 `RouteDecision`。
-
-退出条件：相同输入和配置得到可解释结果；`HEALTHY` 之外的实例、打开熔断的实例和未授权
-Agent 永不进入新任务候选集；已有 Task 保留原实例粘滞，不自动迁移。
-
-### G5：A2A 非流式转发
-
-- [x] 实现可注入 Reactor Netty `AgentTransport`；
-- [x] 实现连接池、分阶段超时和出站凭据；
-- [x] 实现 A2A `1.0` JSON-RPC 编解码和版本协商；
-- [x] 实现 `SendMessage` 转发；
-- [x] 实现 Gateway Task/Context ID 生成和响应重写；
-- [x] 实现有界、带 TTL 的内存 `TaskRouteStore`；
-- [x] 实现 `GetTask`、`ListTasks` 和 `CancelTask` 粘滞转发；
-- [x] 实现幂等键的处理中、成功、结果未知状态；
-- [x] 实现协议和网络错误映射。
-
-退出条件：任务可通过 Gateway ID 查询和取消，任何上游 ID 都不作为路由依据暴露。
-
-### G6：SSE 与任务订阅
-
-- [x] 实现 `SendStreamingMessage` 逐事件桥接；
-- [x] 首个 Task 事件到达时原子保存路由；
-- [x] 实现 Task/Context ID 的流内重写；
-- [x] 实现客户端取消向上游传播；
-- [x] 实现事件大小、流空闲和租户并发限制；
-- [x] 实现 `SubscribeToTask`；
-- [x] 验证事件顺序、背压和错误终止；
-- [x] 完成至少 200 个并发 SSE 的稳定性测试。
-
-退出条件：流式任务断开后，在下游支持时可凭 Gateway Task ID 重订阅。
-
-### G7：A2A 1.0 HTTP+JSON 与 Binding 转换
-
-- [x] 实现 `POST /message:send` 和 `POST /message:stream`；
-- [x] 实现 `GET /tasks/{id}`、`GET /tasks`、`POST /tasks/{id}:cancel` 和
-  `POST /tasks/{id}:subscribe`；
-- [x] 把 HTTP+JSON 请求转换为统一 `GatewayCommand`；
-- [x] 支持 JSON 和 SSE 响应；
-- [x] 实现 HTTP+JSON 入站到 JSON-RPC 上游，以及 HTTP+JSON outbound adapter 编码；
-- [x] 实现 JSON-RPC 优先、HTTP+JSON fallback 的 Agent interface selector，并固定任务续订的 Binding；
-- [x] 验证 HTTP+JSON-only Agent 的同步/SSE 上游转发和 Content-Type 保真；
-- [x] 增加 JSON-RPC 入站 Controller（同步/SSE）并复用同一 Forwarder、鉴权、任务路由和错误 envelope；
-- [x] 验证两个 Binding 的功能、错误、授权和事件语义等价；`coversAgentSkillAndTaskAuthorizationMatrixAcrossBothBindings` 覆盖 Agent/Skill/Task Get/List/Cancel/Subscribe 的 403 策略拒绝；
-- [ ] 定义有损转换拒绝规则和指标；
-- [x] 增加 JSON-RPC/HTTP+JSON 转换、版本拒绝和 ID 重写测试；
-- [x] 错误映射为 HTTP+JSON `error.code/message` envelope。
-
-G7 MVP 退出条件：HTTP+JSON 或 JSON-RPC 调用方可通过 Gateway 调用 JSON-RPC 1.0 Agent 或 HTTP+JSON-only Agent，且同步、
-SSE、任务标识、授权和错误语义保持一致。双入口主路径已落地；完整双向等价性和转换指标留给后续版本。
-
-### G8：可观测性与运维
-
-- [x] 接入 Micrometer 指标（GatewayMetrics SPI + counter/timer/gauge）；
-- [x] 接入 W3C Trace Context（traceparent/tracestate 校验、上下文提取和下游透传）；
-- [x] 实现结构化访问日志和安全审计事件（默认无正文、Token、secret）；
-- [x] 增加 readiness、liveness 和 dependency health 接入示例；
-- [x] 增加 Agent、Operation、错误类型指标/看板字段样例；
-- [x] 增加熔断、无健康实例、Task Store 容量告警建议；
-- [x] 编写故障排查 Runbook；
-- [ ] 企业版接入 OpenTelemetry SDK spans 和跨实例/持久化观测后端。
-
-退出条件：一次调用可以由 requestId 或 traceId 定位到认证、路由和上游结果。
-
-### G9：发布与兼容性
-
-G9 功能基线已完成，配置和 JWT 操作参考见 [configuration.md](./configuration.md) 和
-[jwt-local-test.md](./jwt-local-test.md)；正式 RC 结论见
-[mvp-acceptance-2026-08-01.md](./mvp-acceptance-2026-08-01.md)。
-
-- [x] 提供连接两个示例 Agent 的可运行 Gateway Sample；
-- [x] 提供 JWT 本地测试方式，示例 secret 不进入仓库；
-- [x] 执行单元、契约、模块集成和样例进程 smoke 测试，并保留审计成功事件证据；
-- [x] 补齐可复跑 secret/nonblocking 源码扫描、OSV 依赖漏洞扫描、隔离端口 smoke 和 80/40/8 非流式性能报告；外部组织 SAST/DAST 仍可在 CI 加强；
-- [x] 验证新 Gateway/Sample 边界符合 A2A 1.0，并完成 Client、Server Starter 和 Samples 的主线 Wire 迁移；0.2.1 仅保留拒绝兼容性 contract；
-- [x] 生成配置参考和 API 文档；
-- [x] 明确 MVP 单实例状态限制和升级路径；
-- [x] 发布说明明确 Java API 和 Wire 格式的破坏性升级；
-- [x] 仅在确认真实需求后建立 `a2a4j-compat-v021` Epic（当前不创建兼容模块）。
-
-退出条件：新用户按 README 可在本地启动两个 Agent 和一个 Gateway，并跑通验收脚本。
-
-## 3. 最小验收场景
-
-| ID | 场景 | 预期 |
+| AC | 验收内容 | 当前证据 |
 | --- | --- | --- |
-| AC-01 | 未认证访问业务入口 | HTTP `401` |
-| AC-02 | 已认证但无 Agent 权限 | HTTP `403` 或协议策略拒绝 |
-| AC-03 | 查询 Agent 列表 | 只返回当前租户可见 Agent |
-| AC-04 | 显式 Agent 同步发送 | 请求到达指定逻辑 Agent |
-| AC-05 | 精确 Skill 发送 | 唯一 Agent 被选中 |
-| AC-06 | Skill 匹配多个 Agent | 返回路由冲突，不随机调用 |
-| AC-07 | 逻辑 Agent 有两个健康实例 | 新任务按权重分布 |
-| AC-08 | 一个实例连续失败 | 熔断后新任务不再进入 |
-| AC-09 | 查询或取消已有任务 | 始终回到创建任务的实例 |
-| AC-10 | 两个 Agent 返回相同上游 Task ID | Gateway Task ID 不冲突 |
-| AC-11 | SSE 正常执行 | 事件有序、ID 已重写、终态正常 |
-| AC-12 | 客户端中断 SSE | 上游连接和本地资源被释放 |
-| AC-13 | 相同幂等键重复请求 | 不产生不可控的重复任务 |
-| AC-14 | 上游超时且结果未知 | 不自动切换实例重发 |
-| AC-15 | 跨租户读取 Gateway Task ID | 拒绝且不泄露任务存在性 |
-| AC-16 | 恶意 Card URL | SSRF 策略拒绝 |
-| AC-17 | 上游返回非法 A2A payload | 返回规范化协议错误并记录指标 |
-| AC-18 | HTTP+JSON 调用 JSON-RPC Agent | 同步和 SSE 均正确转换 |
-| AC-19 | 日志与追踪检查 | 无 Token、secret 和消息正文 |
-| AC-20 | 重启内存版 Gateway | 文档明确旧任务路由不可恢复 |
-| AC-21 | 缺失或错误的 `A2A-Version` | 明确拒绝，不静默降级 |
-| AC-22 | JSON-RPC 与 HTTP+JSON 等价请求 | 结果、错误和授权语义等价 |
+| AC-01 | 未认证数据面请求被拒绝 | API Key Filter、真实 JWT WebFlux E2E、smoke 脚本 |
+| AC-02 | JWT、租户和权限正确执行 | `GatewayJwtAuthenticationConverterTest`、双 Binding 权限矩阵 E2E |
+| AC-03 | 目录与 Card 按租户投影 | Catalog Controller/WebFlux 测试 |
+| AC-04 | 显式 Agent 路由 | Resolver 和数据面 E2E |
+| AC-05 | 精确 Skill 路由 | Resolver 测试及 Sample smoke 脚本 |
+| AC-06 | 默认 Agent 与歧义拒绝 | Resolver 测试 |
+| AC-07 | 多实例负载选择 | Load Balancer 测试及双健康实例 E2E |
+| AC-08 | bulkhead、熔断和半开恢复 | `WeightedLeastActiveLoadBalancerTest` |
+| AC-09 | Gateway Task/Context ID 隔离 | Forwarder、Adapter 和 E2E |
+| AC-10 | Get/Cancel 固定原实例和接口 | Forwarder 与双 Binding E2E |
+| AC-11 | SSE 顺序、ID 改写和终态 | Codec、Streaming Forwarder 和 E2E |
+| AC-12 | 200 并发流与客户端取消 | `GatewayHttpJsonDataPlaneE2eTest` |
+| AC-13 | 幂等冲突与完成重放 | `InMemoryIdempotencyStoreTest`、Forwarder 测试 |
+| AC-14 | 结果未知不自动重试 | Idempotency Store 和 Forwarder 语义 |
+| AC-15 | 跨租户/主体任务隔离 | Authorization、Store 和 E2E |
+| AC-16 | SSRF、DNS/IP/CIDR 拦截 | `AgentCardUrlPolicyTest`、Transport/Discovery 测试 |
+| AC-17 | 非法或不可用上游稳定映射 | Forwarder 和 E2E |
+| AC-18 | JSON-RPC/HTTP+JSON 双向转换 | 两个 Adapter、Interface Selector 和 E2E |
+| AC-19 | 正文与 secret 不进入默认审计 | Security、Audit、Access Filter 测试及门禁脚本 |
+| AC-20 | 单实例状态限制明确 | Architecture、Configuration、Runbook 和本文 |
+| AC-21 | 非 1.0 版本明确拒绝 | Protocol contract、Adapter 和 E2E |
+| AC-22 | 两种入站 Binding 的成功/错误/授权等价 | `GatewayHttpJsonDataPlaneE2eTest` |
+| AC-23 | Push 和 Extended Card 能力门禁与 ID 映射 | Forwarder、Adapter、Controller 测试 |
+| AC-24 | `returnImmediately` 与订阅首个 Task/Context 语义 | Core Server 专项测试及 Gateway Adapter 测试 |
+| AC-25 | ListTasks 分页、过滤、快照与 Artifact append | Store、Forwarder 和 Streaming Forwarder 测试 |
+| AC-26 | HTTP Access 与数据面审计共享 request ID | `GatewayAccessLogWebFilterTest`、`GatewayRequestIdResolverTest` |
 
-## 4. 测试分层
+## 6. 当前验证记录
 
-```text
-Unit
-  路由、选择、ID 重写、错误映射、配置校验
-Contract
-  Registry、TaskRouteStore、ProtocolAdapter、CredentialProvider SPI
-Golden
-  A2A 1.0 JSON-RPC 与 HTTP+JSON 请求/响应/SSE 样本
-Integration
-  Gateway + 两个测试 Agent + 模拟 IdP
-Fault
-  超时、断流、非法响应、熔断、Store 失败、凭据失败
-Security
-  JWT、租户越权、SSRF、Header 注入、日志脱敏、payload 限制
-Load
-  非流式延迟、连接池、200 SSE、慢消费者、资源回收
-Regression
-  升级后的 a2a4j-core、Client、Server Starter 和 Samples
+### 6.1 2026-08-02 功能回归
+
+本轮执行：
+
+```powershell
+.\mvnw.cmd test
 ```
 
-## 5. 发布门槛
+结果：13 个 Reactor 模块全部 `SUCCESS`，合计 279 tests，0 failures，0 errors。关键模块为：
 
-发布 MVP 前必须全部满足：
+| 模块 | Tests |
+| --- | ---: |
+| `a2a4j-core` | 159 |
+| `a2a4j-gateway-api` | 5 |
+| `a2a4j-gateway-core` | 61 |
+| `a2a4j-gateway-spring-boot-starter` | 40 |
+| Server Starter、Server Sample、Client Starter | 14 |
 
-2026-08-01 发布门禁已通过：`tools/g10-release-gates.ps1` 统一执行构建、测试、扫描、smoke 和性能基线；逐项证据见
-`docs/agent-gateway/mvp-acceptance-2026-08-01.md`。外部组织 SAST/DAST、BlockHound 和持久化 Store 压测仍属于企业版增强，不阻塞本地 MVP 门禁。
+Gateway 定向干净构建也已执行：
 
-- [x] 所有 AC-01 至 AC-22 自动化或形成可重复验收脚本；
-- [x] 没有 Critical/High 安全问题（OSV 报告 HIGH/CRITICAL=0）；
-- [x] 没有 Reactor event-loop 阻塞警告（源码门禁；企业 CI 可加 BlockHound）；
-- [x] 默认任务和幂等 Store 有容量上限及占用清理指标；持久化 Store 的容量/清理指标由企业版实现负责；
-- [x] 所有网络调用有超时；
-- [x] 写请求没有不安全的跨实例自动重试；
-- [x] secret 不在配置样例、日志、指标、追踪和错误体中（源码/runtime-like secret scan）；
-- [x] README 明确协议版本、单实例限制和不兼容项；
-- [x] 迁移后的项目测试和 A2A 1.0 Binding 契约测试全部通过；
-- [x] 性能测试报告包含硬件、JVM、payload、并发和上游延迟说明。
-
-## 6. MVP 实施过程记录
-
-本节集中记录 G0-G9 的实施过程和收口状态。README 只做导航，architecture 只保留设计基线，
-配置、Runbook、验收和发布说明只作为配套参考，不再复制阶段日志。
-
-| 阶段 | 关键交付 | 验证与配套文档 | 当前结论 |
-| --- | --- | --- | --- |
-| G0 | 锁定 A2A `1.0.0` Proto/校验值，建立 Agent Card、JSON-RPC golden fixtures、Gateway 模块和命名契约 | Core 契约测试；架构与 README 基线；Client/Server/Samples 1.0 method/path contract | 完成；legacy 0.2.1 method 仅保留拒绝测试 |
-| G1 | 不可变领域模型、异步 SPI、凭据脱敏和 TCK 风格共享契约 | Gateway API/Core 契约测试 | 完成 |
-| G2 | YAML 配置、Card 拉取/规范化/hash、原子注册快照、主动/被动健康、SSRF 策略、tenant-scoped 目录 API | Registry/探测测试、目录 WebFlux 测试、`g9-smoke.ps1` | 完成 |
-| G3 | JWT/API Key 入站认证、Claim 到 `PrincipalContext`、Agent/Skill/Task 授权、`env://` 出站凭据和脱敏 | Security/Core 测试、目录未认证/跨租户验证、本地 RSA JWT 经真实 WebFlux Resource Server 过滤链的入站 E2E | 完成 |
-| G4 | 确定性路由、任务粘滞、加权最少在途、bulkhead、熔断和可审计 `RouteDecision` | Resolver/Load Balancer 测试、双健康实例 WebFlux E2E 分布验证 | 完成 |
-| G5 | JSON-RPC 非流式转发、Task/Context ID 重写、幂等、超时/错误分类、有界 TTL Store | Forwarder/Transport/Store 测试 | 完成 |
-| G6 | SSE 逐事件桥接、取消传播、续订、终态保存、空闲/事件大小/租户并发限制 | SSE/流式编排测试、HTTP 客户端取消向上游传播 E2E、200 并发 SSE E2E | 完成 |
-| G7 | HTTP+JSON/JSON-RPC 双入口、任务操作、目录 API、Binding 转换、统一错误 envelope 和 WebFlux 边界 | Adapter/Starter WebFlux 测试、`GatewayHttpJsonDataPlaneE2eTest`（含双入口 Agent/Skill/Task 权限矩阵）、`GatewayJsonRpcController`、HTTP+JSON-only selector、真实 JWT 过滤链、故障/版本/授权/任务操作等价和 smoke | 完成 |
-| G8 | Micrometer 指标、Trace Context、body-free 审计、健康检查、Runbook、Store 容量/占用/淘汰/过期指标 | 指标/审计/健康测试、配置与 Runbook | 功能完成 |
-| G9 | 双 Agent Sample、配置/JWT 本地测试、smoke、发布说明和 0.2.1 隔离策略 | package、`tools/g9-smoke.ps1`、`tools/g10-release-gates.ps1`、`tools/g10-osv-scan.ps1`、性能报告和验收审计 | 正式 MVP 门禁通过 |
-
-### G9 交付与兼容边界
-
-- `gateway-hello-world` 的 `*-exec.jar` 只启动 Gateway。`echo-a` 和 `echo-b` 是两个独立的
-  `server-hello-world` 进程，分别通过 `echo-a`/`echo-b` Spring profile 启动；二者由 Server Starter
-  发布 `/.well-known/agent-card.json`，并真实执行
-  `DemoAgentExecutor`。示例 Card 仅声明实际实现的 A2A 1.0 JSON-RPC binding。
-- Gateway 默认使用开发 API Key；生产环境切换 JWT Resource Server，并通过环境变量或外部 Secret
-  Provider 注入密钥。`tools/g9-smoke.ps1` 覆盖双 Agent 健康、目标路由、目录 API、未认证/版本拒绝和成功审计。
-- API Key 入口显式关闭 HTTP Basic/Form Login，并使用普通 `401` entry point；未携带 key 不再返回
-  `WWW-Authenticate: Basic`，浏览器不会弹出用户名/密码框；该回归由 smoke 脚本的响应头断言覆盖。
-- 修复 API Key WebFilter 将正常完成的 `Mono<Void>` 误判为空、在响应写出后覆盖为 `401` 的问题；目录
-  列表/详情/Card 及数据面响应现在能正常完成，smoke 额外校验目录 JSON 和转发响应体非空。
-- 新 Gateway、Client、Server Starter 和 Samples 边界均以 A2A 1.0 为基线；旧 0.2.1 method 不作为运行时 Wire，
-  仅保留明确拒绝 contract。只有出现可验证的存量流量时，才建立隔离的 `a2a4j-compat-v021` Epic。
-- 注册表、Card 快照和 Task Route Store 为单实例内存实现，重启后旧任务不可恢复；企业版先替换为
-  Redis/JDBC，再增加跨实例幂等、租约、分布式限流和 OpenTelemetry 后端，升级时保持
-  `A2A-Version: 1.0` 显式协商。
-- 配置与 API 参考已分别整理：`configuration.md` 记录静态注册、Card 刷新/入库、完整配置项、鉴权和 MVP/企业版边界；
-  `api-reference.md` 记录目录、HTTP+JSON、JSON-RPC、SSE、Task、Actuator、请求 Header 与错误映射。
-
-实施规则：每个阶段按“代码 → 自动化测试 → 示例配置/运行方式 → 文档 → 根回归”收口；
-阶段状态只追加到本节，缺口保留在验收矩阵中，不通过复制新文档拆分过程。
-
-当前验证快照（2026-08-01）：
-
-```text
-mvnw.cmd clean test -DskipTests=false -Dmaven.clean.failOnError=false -> 13 个 Reactor 模块，246 tests，0 failures/errors/skipped
-mvnw.cmd package -DskipTests           -> 通过（Gateway 与 Server sample 分别产出 `gateway-hello-world-0.0.1-exec.jar`、`server-hello-world-0.0.1-exec.jar`；避免运行中的普通 jar 被 Windows 锁定）
-tools/g9-smoke.ps1 (18191/18192/18199) -> 通过（两个独立 Server Starter Agent、health、401、版本拒绝、目录、显式 Agent 路由、Skill-only 路由、真实 HTTP+JSON/JSON-RPC SendMessage 与 SendStreamingMessage→GetTask Route、审计）
-tools/g10-osv-scan.ps1                 -> 通过（87 runtime dependencies，HIGH/CRITICAL=0）
-tools/g10-performance.ps1              -> 通过（80 sequential/40 concurrent/concurrency=8，报告含 p95/p99）
-tools/g10-release-gates.ps1            -> 通过（target/release-gates/mvp-release-gates.json）
-GatewayHttpJsonDataPlaneE2eTest        -> 15 个 WebFlux + Reactor Netty HTTP+JSON/JSON-RPC 入站、200 并发 SSE/客户端取消/双实例分布/双上游/故障与版本/授权/任务操作等价/租户隔离/真实 RSA JWT 过滤链 E2E 通过
-DefaultAgentInterfaceSelectorTest      -> Binding 优先级、fallback 和拒绝规则通过
-GatewayStreamingForwarderTest          -> 下游取消传播单测通过
-git diff --check                        -> 通过
+```powershell
+.\mvnw.cmd -pl a2a4j-gateway-spring-boot-starter -am clean test
 ```
 
-正式发布门槛以 [`mvp-acceptance-2026-08-01.md`](./mvp-acceptance-2026-08-01.md) 为准；外部 CI SAST/DAST、BlockHound 和持久化 Store 压测属于企业版增强项。
+结果为 264 tests，0 failures，0 errors；Checkstyle 0 违规。测试日志中的 Jakarta Bean Validation provider 提示来自
+轻量 WebFlux 测试上下文，不影响测试结果，也不是 Gateway 数据面异常。
 
-### 6.1 本轮问题修正（2026-08-01）
+本轮明确没有执行：
 
-- [x] 确认 Skill 能力来源：Agent Card `skills[]` 为 MVP 的唯一声明入口；目录、路由和 `skill:invoke:{skillId}` 授权均复用该快照，暂不提供运行时 Skill 注册 API。
-- [x] 将 Gateway sample 的两个 Agent 迁移为真实 `server-hello-world` 进程：Card 与 Skill 由 `application-echo-a.yml` 和 `application-echo-b.yml` 的 `a2a.server` 配置驱动；默认 `echo-a` 发布 `hello-world` + `code-generation`，`echo-b` 发布 `task-summary`。
-- [x] 增加 Skill-only 路由回归：`X-A2A-Target-Skill: code-generation` 在默认样例中唯一选中 `echo-a`；多个 Agent 声明同一 Skill 时仍按冲突策略拒绝歧义请求。
-- [x] 示例流式能力改由真实 `DemoAgentExecutor` 的 `RequestContext`/`EventQueue` 生命周期提供：首帧 `TASK_STATE_WORKING/final:false`，中间包含状态和 Artifact 事件，终帧 `TASK_STATE_COMPLETED/final:true`，所有事件共享同一 Task ID。
-- [x] 删除 Gateway 进程内 `SampleAgentController` HTTP fixture；smoke 通过 Gateway 发现并转发至两个独立 Server Starter Agent，验证真实 Card、Skill 和执行链路。
-- [x] 修正 HTTP+JSON 入站到 JSON-RPC 上游的 Part 结构：文本 Part 直接使用 A2A 1.0 的 `text`/`mediaType` 字段，Gateway 不生成 A2A v0.3 的 `kind` 判别字段；`JsonRpcProtocolAdapterTest` 和真实 smoke 均覆盖。
-- [x] 更新配置/API 参考，补充多 Skill Card 示例、Skill 路由/权限和 SSE 客户端读取说明。
-- [x] 将配置与接口契约拆分：`configuration.md` 只保留启动、注册、安全和运行限制；新增 `api-reference.md`，按当前 Controller/Adapter 核对并完整列出目录、HTTP+JSON、JSON-RPC（含 Push/Card 方法）、SSE、任务、错误和 sample Actuator 端点。
-- [x] 补充 JSON-RPC 任务调用示例，并更正 Push 边界：Push 方法目前仅被 Adapter 识别，MVP 尚未实现 Gateway Task ID 到上游 Task ID 的映射、配置持久化或回调代理；文档明确要求需要 Push 时直接调用支持该能力的 Agent。
-- [x] 修正 JSON-RPC 文本 Part 示例并加入真实 smoke：JSON-RPC 入站和出站均使用不带 `kind` 的 A2A 1.0 `text`/`mediaType` Part。smoke 现覆盖真实 JSON-RPC `SendMessage→GetTask`。
-- [x] 固化 A2A 1.0 流式事件 wrapper：JSON-RPC SSE `result` 使用 `statusUpdate`/`artifactUpdate`，Gateway 按 oneof wrapper 提取并改写 `taskId`/`contextId`，真实 `SendStreamingMessage→GetTask` smoke 固化回归。
-- [x] 回归验证：Gateway sample 测试、全仓 Maven 测试、`package -DskipTests` 和隔离端口 `g9-smoke.ps1` 均通过。
-- [x] 同步 `server-hello-world` 与 `client-hello-world` 的 `README.md` 和 `README_CN.md`：使用 A2A 1.0 方法名、Agent Card 主路径、`A2A-Version: 1.0` 和当前 Client 本地入口。
+- `tools/g10-performance.ps1`；
+- `tools/g10-osv-scan.ps1`；
+- `tools/g9-smoke.ps1`；
+- `tools/g10-release-gates.ps1`。
 
-## 7. MVP 之后的第一个 Backlog
+因此本轮结论是“功能回归通过”，不是新的性能、安全扫描或完整发布门禁证明。
 
-建议紧接 MVP 处理：
+### 6.2 2026-08-01 历史门禁摘要
 
-1. Redis/JDBC 任务路由和幂等存储；
-2. A2A `1.0` gRPC Binding；
-3. Agent Card 签名验证和完整 Push Notification 代理；
-4. Gateway 多副本与滚动升级测试；
-5. 分布式限流和策略热更新；
-6. 独立控制平面和动态注册审批；
-7. 有真实存量需求时提供隔离的 `a2a4j-compat-v021`。
+仓库仍保留 `g9-smoke.ps1`、`g10-osv-scan.ps1`、`g10-performance.ps1` 和 `g10-release-gates.ps1`，可在正式
+发布时复跑。2026-08-01 曾记录：多进程 smoke 成功、87 个运行时依赖 HIGH/CRITICAL 为 0，以及发布门禁通过。
+这些是历史信息；对应临时 `target/release-gates` 报告和独立依赖扫描 Markdown 当前不在工作区，不能代替新版本证据。
+
+### 6.3 历史性能参考（本轮未复测）
+
+2026-08-01 的 Windows 开发机脚本快照如下，仅用于保存历史上下文：
+
+| 项目 | 历史值 |
+| --- | --- |
+| 环境 | Windows 11；Java 21.0.11；本机 loopback |
+| Payload | 69 bytes |
+| 请求 | 80 sequential；40 concurrent；concurrency 8 |
+| Gateway sequential p95/p99 | 4311 ms / 6649 ms |
+| Gateway concurrent p95/p99 | 4232 ms / 4233 ms |
+| Direct upstream p95/p99 | 4182 ms / 4249 ms |
+| sequential p95 差值 | 129 ms，本机估算 |
+
+该数据混合了示例 Agent 约 4 秒执行时间，不能视为 Gateway 容量、纯开销或生产 SLO。当前阶段不要求性能测试。
+只有准备容量评估时，才应在目标硬件、固定 JVM、代表性 payload 和可控上游延迟下重新测试，并分别报告 Gateway
+自身开销、吞吐、错误率、p95/p99、SSE 长连接和长期稳定性。
+
+## 7. 发布门槛
+
+| 门槛 | 当前状态 |
+| --- | --- |
+| 全仓编译、Checkstyle 和自动化测试 | 通过（2026-08-02） |
+| A2A 1.0 Proto lock 和 Binding 契约 | 通过（2026-08-02） |
+| Gateway 功能 AC-01～AC-26 | 自动化测试或可复跑脚本覆盖 |
+| Sample package 和多进程 smoke | 正式发布时复跑 |
+| OSV/secret/nonblocking 扫描 | 正式发布时复跑；本轮未执行 |
+| 性能基线 | 当前不要求；需要容量承诺时在目标环境重跑 |
+| 多副本恢复和持久状态 | 不属于当前 MVP，发布说明必须明确 |
+
+不要因为历史门禁通过而自动标记新的提交可发布。每个发布候选应保存与提交版本对应的构建、扫描和 smoke 证据。
+
+## 8. 已知限制
+
+- Task Route、幂等、流配额和熔断状态均为进程内状态；
+- Card 刷新是当前唯一独立主动 Agent 探测，没有通用上游 `/health` 探测；
+- 默认只支持 `env://` Bearer 出站凭据；
+- 没有 gRPC、动态注册、配置热更新、自动重试或调用方 deadline 协商；
+- 没有自动创建 OpenTelemetry spans；
+- 公开入口不支持路由标签；
+- 多实例 Card 的完整 Skills/capabilities 一致性由部署方保证；
+- 普通请求没有租户级并发配额，只有 SSE 流配额和实例 bulkhead。
+
+## 9. MVP 后续 Backlog
+
+1. Redis/JDBC Task Route 与 Idempotency Store，定义重启、滚动升级和多副本恢复语义；
+2. 分布式 SSE 配额、事件游标和订阅恢复；
+3. 可配置 bulkhead/熔断及更完整的 Agent/Route/Circuit 指标；
+4. OTel spans、持久化审计和配置版本/审批/回滚；
+5. Vault/KMS、mTLS、OBO 和外部策略引擎；
+6. 动态 Agent 注册控制平面及 Card 签名/信任链；
+7. A2A 1.0 gRPC Binding；
+8. 在真实存量需求出现时提供隔离的 A2A 0.2.1 兼容模块；
+9. 在目标环境建立可重复的容量、故障注入和长期 soak 测试。

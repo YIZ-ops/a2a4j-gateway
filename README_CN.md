@@ -20,7 +20,7 @@
 - ✅ **响应式编程支持** - 基于 Reactor 构建，可扩展的非阻塞操作
 - ✅ **多种内容类型** - 支持文本、文件和结构化数据交换
 - ⚪️ **推送通知配置** - A2A 推送通知配置 API；实际投递由应用负责集成
-- ⚪️ **Agent Card 发现机制** - 动态能力发现机制
+- ✅ **Agent Card 发现机制** - A2A 1.0 Agent Card 和 Gateway well-known 发现入口
 - ⚪️ **企业级安全** - 身份验证和授权支持
 
 ## 📋 环境要求
@@ -254,7 +254,7 @@ Invoke-RestMethod http://localhost:8099/message:send -Method Post `
 ```
 
 可使用 `X-A2A-Target-Agent: echo-b` 或 `X-A2A-Target-Skill: code-generation` 选择路由。完整配置、API
-矩阵、安全说明和 MVP 限制请参阅 [Gateway 文档](docs/agent-gateway/README.md) 和
+矩阵、安全说明、SSE 错误行为和 MVP 限制请参阅 [Gateway 文档](docs/agent-gateway/README.md) 和
 [Gateway 样例 README](a2a4j-samples/gateway-hello-world/README.md)。
 
 ### A2A4J 核心模块 (`a2a4j-core`)
@@ -314,9 +314,9 @@ Invoke-RestMethod http://localhost:8099/message:send -Method Post `
 - [A2A 协议规范](specification/specification.md)
 - [核心模块文档](a2a4j-core/README_CN.md)
 - [API 参考](a2a4j-core/API_REFERENCE.md)
-- [Hello World 示例](a2a4j-samples/server-hello-world/README_CN.md)
+- [Hello World 示例](a2a4j-samples/server-hello-world/README.md)
 - [Gateway 架构与 MVP Backlog](docs/agent-gateway/README.md)
-- [Gateway 配置与 API 参考](docs/agent-gateway/configuration.md)
+- [Gateway 配置](docs/agent-gateway/configuration.md)与 [API 参考](docs/agent-gateway/api-reference.md)
 - [Gateway 样例](a2a4j-samples/gateway-hello-world/README.md)
 
 ## 🤝 贡献

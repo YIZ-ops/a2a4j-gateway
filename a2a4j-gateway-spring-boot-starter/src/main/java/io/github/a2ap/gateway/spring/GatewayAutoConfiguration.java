@@ -203,25 +203,29 @@ public class GatewayAutoConfiguration {
     @ConditionalOnMissingBean(GatewayHttpJsonController.class)
     public GatewayHttpJsonController gatewayHttpJsonController(GatewayForwarder forwarder,
             HttpJsonProtocolAdapter adapter, GatewayProperties properties, GatewayAuditSink auditSink,
-            GatewayMetrics metrics) {
-        return new GatewayHttpJsonController(forwarder, adapter, properties, auditSink, metrics);
+            GatewayMetrics metrics, GatewayAgentCatalogController catalog) {
+        return new GatewayHttpJsonController(forwarder, adapter, properties, auditSink, metrics, catalog);
     }
 
     /** Exposes the authenticated A2A 1.0 JSON-RPC data-plane endpoints. */
     @Bean
     @ConditionalOnMissingBean(GatewayJsonRpcController.class)
     public GatewayJsonRpcController gatewayJsonRpcController(GatewayForwarder forwarder,
-            GatewayProperties properties, GatewayAuditSink auditSink, GatewayMetrics metrics) {
-        return new GatewayJsonRpcController(forwarder, new JsonRpcProtocolAdapter(), properties, auditSink, metrics);
+            GatewayProperties properties, GatewayAuditSink auditSink, GatewayMetrics metrics,
+            GatewayAgentCatalogController catalog) {
+        return new GatewayJsonRpcController(forwarder, new JsonRpcProtocolAdapter(), properties, auditSink, metrics,
+                catalog);
     }
 
     /** Exposes tenant-scoped Agent discovery and Card projections. */
     @Bean
     @ConditionalOnMissingBean(GatewayAgentCatalogController.class)
     public GatewayAgentCatalogController gatewayAgentCatalogController(AgentRegistry registry,
-            ObjectProvider<com.fasterxml.jackson.databind.ObjectMapper> objectMappers) {
+            ObjectProvider<com.fasterxml.jackson.databind.ObjectMapper> objectMappers,
+            ObjectProvider<GatewaySecurityProperties> securityProperties) {
         return new GatewayAgentCatalogController(registry,
-                objectMappers.getIfAvailable(com.fasterxml.jackson.databind.ObjectMapper::new));
+                objectMappers.getIfAvailable(com.fasterxml.jackson.databind.ObjectMapper::new),
+                securityProperties.getIfAvailable());
     }
 
     /** Maps data-plane failures to the A2A HTTP+JSON error envelope. */

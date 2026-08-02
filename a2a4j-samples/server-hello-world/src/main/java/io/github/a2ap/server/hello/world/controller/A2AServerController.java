@@ -253,6 +253,9 @@ public class A2AServerController {
      * <p>
      * <strong>Example response stream:</strong> <pre>
      * event: task-update
+     * data: {"jsonrpc":"2.0","result":{"task":{"id":"abc123","contextId":"ctx123","status":{"state":"TASK_STATE_SUBMITTED"}}},"id":"1"}
+     *
+     * event: task-update
      * data: {"jsonrpc":"2.0","result":{"statusUpdate":{"taskId":"abc123","status":{"state":"TASK_STATE_WORKING"}}},"id":"1"}
      *
      * event: task-update

@@ -1,4 +1,4 @@
-# A2A4J Agent Gateway 规划文档
+# A2A4J Agent Gateway 文档
 
 本文档集用于指导在 A2A4J 当前代码库上建设 Agent Gateway。
 
@@ -10,15 +10,17 @@
 - [Gateway API 参考](./api-reference.md)：完整北向 API 清单，包含目录、HTTP+JSON、JSON-RPC、SSE、任务、错误和 Actuator 端点。
 - [故障排查 Runbook](./runbook.md)：按 requestId/traceId、健康状态、路由和上游错误定位问题。
 - [JWT 本地测试](./jwt-local-test.md)：JWT Resource Server 的本地验证步骤。
-- [MVP 验收审计](./mvp-acceptance-2026-08-01.md)：当前发布门槛的证据矩阵与缺口。
-- [性能基线](./mvp-performance-2026-08-01.md)：固定 Windows 开发机上的非流式 p95/p99 基线。
-- [依赖漏洞扫描](./mvp-dependency-scan-2026-08-01.md)：OSV Maven runtime dependency 扫描结果。
+- [外部 Agent 接入](./external-agent-integration.md)：Card、Binding、认证、网络策略和联调清单。
 
-## 当前状态（2026-08-01）
+## 当前状态（2026-08-02）
 
 MVP G0-G9 的实施过程、阶段状态和验证命令统一记录在
-[mvp-backlog.md](./mvp-backlog.md)，本文档不再复制逐阶段进度。当前功能基线已通过：全仓库
-`clean test`（246 tests）、HTTP+JSON/JSON-RPC 双入口、200 并发 SSE、客户端取消传播、双实例分布、双上游 Binding、故障/版本/授权/任务操作等价与租户隔离数据面 E2E、真实 RSA JWT Resource Server 过滤链、Sample smoke、目录 API 和默认 Store 指标均有证据；`tools/g10-release-gates.ps1` 已通过完整权限矩阵、OSV/secret/nonblocking 扫描、隔离 smoke 和性能基线，正式 MVP 门槛通过。外部 CI SAST/DAST、BlockHound 和持久化 Store 压测属于企业版增强。
+[mvp-backlog.md](./mvp-backlog.md)，本文档不再复制逐阶段进度。当前实现已覆盖 HTTP+JSON/JSON-RPC 双入口、双向
+Binding 转换、JSON-RPC 入站到 HTTP+JSON-only 上游的同步/SSE envelope、标准 Agent Card 发现、能力门禁、
+ListTasks cursor/快照、跨 Binding 错误归一化以及 SSE 建连失败的首帧前错误处理。Gateway Core 定向包测试
+（61 tests）和 Spring Starter 测试（40 tests）通过；2026-08-02 全仓 `mvnw.cmd test` 的 13 个 Reactor
+模块、279 tests 全部通过，Proto hash 契约已正常通过。本轮没有运行性能、OSV 或多进程 smoke，完整发布门槛状态见
+[mvp-backlog.md](./mvp-backlog.md)。
 
 ## 已确定的关键决策
 
@@ -27,7 +29,7 @@ MVP G0-G9 的实施过程、阶段状态和验证命令统一记录在
    `1.0`，不以本地旧规范 `0.2.1` 作为新架构基线。
 3. MVP 原生支持 A2A `1.0` JSON-RPC 和 HTTP+JSON，并通过统一内部命令完成两种
    Binding 的相互转换；gRPC 放入后续版本。
-4. MVP 的自动路由只做确定性规则：显式 Agent、精确 Skill、标签规则。暂不引入 LLM 语义路由。
+4. MVP 的公开入口只做确定性规则：Task/Context 亲和、显式 Agent、精确 Skill 和租户默认 Agent；标签仅供受信任扩展命令使用。暂不引入 LLM 语义路由。
 5. 新任务可负载均衡；已创建任务必须依据任务路由映射回到原 Agent 实例。
 6. 入站身份和出站 Agent 凭据严格分离，默认不透传调用者令牌。
 7. MVP 可单实例运行，但状态、策略、协议和凭据均通过 SPI 隔离，后续可替换为企业级实现。
@@ -41,7 +43,7 @@ a2a4j-core                         # 直接升级为 A2A 1.0 模型与抽象操�
 a2a4j-gateway-api
 a2a4j-gateway-core
 a2a4j-gateway-spring-boot-starter
-a2a4j-samples/gateway
+a2a4j-samples/gateway-hello-world
 ```
 
 首个可演示版本至少连接两个升级后的 A2A `1.0` Agent，完成发现、路由、
@@ -56,6 +58,7 @@ JSON-RPC/HTTP+JSON 转换、同步转发、SSE 转发、任务查询和取消，
 已落地的 Spring WebFlux 入口包括：
 
 - `GET /gateway/v1/agents`、`GET /gateway/v1/agents/{agentId}`、`GET /gateway/v1/agents/{agentId}/card`；
+- `GET /.well-known/agent-card.json` 和 `GET /.well-known/agents/{agentId}/agent-card.json`；标准入口免认证，根路径在多 Agent 部署时使用确定性默认 Card；
 - `POST /message:send`、`POST /message:stream`；
 - `POST /a2a`、`POST /gateway/v1/a2a`（A2A 1.0 JSON-RPC，同步与 SSE）；
 - `GET /tasks/{id}`、`GET /tasks`；
@@ -64,7 +67,8 @@ JSON-RPC/HTTP+JSON 转换、同步转发、SSE 转发、任务查询和取消，
 
 入口从 Spring Security 的 `GatewayAuthenticationToken` 获取不可变 `PrincipalContext`，路径 Agent ID
 只作为受控路由提示，不能覆盖租户和授权策略；错误统一映射为 HTTP+JSON
-`{"error":{"code","message"}}`，并覆盖 400/401/403/404/409/429/502/503/413。请求体默认上限为
+`{"error":{"code","message"}}` 或 JSON-RPC error envelope，并覆盖 400/401/403/404/409/429/502/503/413。
+流式建连的上游非 2xx 响应会在首帧前按入口协议返回错误，不会伪装成 200 SSE。请求体默认上限为
 `a2a.gateway.max-request-bytes: 1MB`。
 
 默认上游优先选择 JSON-RPC 1.0；当 Agent 仅提供 HTTP+JSON 时自动 fallback 到 HTTP+JSON，JSON-RPC 与 HTTP+JSON 均可作为入站入口，且任务续订固定原始
@@ -75,10 +79,9 @@ Binding。两个 adapter 均提供双向编码能力，跨实例事件回放和�
 management:
   endpoints.web.exposure.include: health,info,prometheus
   endpoint.health.probes.enabled: true
-  endpoint.health.group.readiness.include: gatewayAgentHealthIndicator,gatewayDependencyHealthIndicator
-  endpoint.health.group.liveness.include: ping
+  endpoint.health.group.readiness.include: readinessState,gatewayDependency
+  endpoint.health.group.liveness.include: livenessState
 ```
 
-Gateway 运行限制、完整端点说明和验收缺口分别见 [configuration.md](./configuration.md)、
-[api-reference.md](./api-reference.md)、[mvp-backlog.md](./mvp-backlog.md) 和
-[mvp-acceptance-2026-08-01.md](./mvp-acceptance-2026-08-01.md)。
+Gateway 运行限制、完整端点说明和验收/发布状态分别见 [configuration.md](./configuration.md)、
+[api-reference.md](./api-reference.md) 和 [mvp-backlog.md](./mvp-backlog.md)。

@@ -19,6 +19,8 @@ package io.github.a2ap.gateway.spring;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.a2ap.gateway.core.forwarding.GatewayForwardingException;
+import io.github.a2ap.gateway.core.forwarding.GatewayUpstreamException;
+import io.github.a2ap.gateway.core.protocol.VersionNotSupportedException;
 import io.github.a2ap.gateway.core.routing.RouteResolutionException;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
@@ -29,6 +31,7 @@ import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.server.ServerWebExchange;
 
 /** Maps JSON-RPC data-plane failures to JSON-RPC errors with a stable Gateway code in data. */
 @RestControllerAdvice(assignableTypes = GatewayJsonRpcController.class)
@@ -40,7 +43,7 @@ public final class GatewayJsonRpcErrorHandler {
 
     /** Handles failures before an SSE response is committed. */
     @ExceptionHandler(Throwable.class)
-    public ResponseEntity<byte[]> handle(Throwable error) {
+    public ResponseEntity<byte[]> handle(Throwable error, ServerWebExchange exchange) {
         Throwable cause = unwrap(error);
         Mapping mapping = map(cause);
         Map<String, Object> detail = new LinkedHashMap<>();
@@ -49,15 +52,24 @@ public final class GatewayJsonRpcErrorHandler {
         detail.put("data", java.util.List.of(A2aErrorPayload.errorInfo(mapping.asPayloadMapping())));
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("jsonrpc", "2.0");
-        body.put("id", null);
+        body.put("id", exchange == null ? null : exchange.getAttribute("a2a.jsonrpc.id"));
         body.put("error", detail);
         try {
             return ResponseEntity.status(mapping.status()).contentType(JSON)
                     .body(objectMapper.writeValueAsString(body).getBytes(StandardCharsets.UTF_8));
         }
         catch (JsonProcessingException ex) {
+            String id = "null";
+            if (exchange != null) {
+                try {
+                    id = objectMapper.writeValueAsString(exchange.getAttribute("a2a.jsonrpc.id"));
+                }
+                catch (JsonProcessingException ignored) {
+                    // Keep the protocol error valid even when an unusual request id cannot be serialized.
+                }
+            }
             return ResponseEntity.status(mapping.status()).contentType(JSON)
-                    .body(("{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{"
+                    .body(("{\"jsonrpc\":\"2.0\",\"id\":" + id + ",\"error\":{"
                             + "\"code\":-32603,\"message\":\"gateway error\"}}").getBytes(StandardCharsets.UTF_8));
         }
     }
@@ -68,11 +80,19 @@ public final class GatewayJsonRpcErrorHandler {
         }
         if (error instanceof RouteResolutionException route) {
             return switch (route.code()) {
-                case TASK_ROUTE_NOT_FOUND, AGENT_NOT_FOUND -> mapping(404, "GATEWAY_ROUTE_NOT_FOUND");
+                case TASK_ROUTE_NOT_FOUND -> mapping(404, "TASK_NOT_FOUND");
+                case AGENT_NOT_FOUND -> mapping(404, "GATEWAY_ROUTE_NOT_FOUND");
                 case ROUTE_CONFLICT -> mapping(409, "GATEWAY_ROUTE_CONFLICT");
                 case AGENT_UNAVAILABLE, DEADLINE_EXCEEDED -> mapping(503, "GATEWAY_AGENT_UNAVAILABLE");
                 case AUTHORIZATION_DENIED -> mapping(403, "GATEWAY_POLICY_DENIED");
             };
+        }
+        if (error instanceof VersionNotSupportedException) {
+            return mapping(400, "VERSION_NOT_SUPPORTED");
+        }
+        if (error instanceof GatewayUpstreamException upstream) {
+            return mapping(upstream.httpStatus(), upstream.rpcCode(),
+                    upstream.reason() == null ? "UPSTREAM_ERROR" : upstream.reason());
         }
         if (error instanceof GatewayForwardingException forwarding) {
             return switch (forwarding.code()) {
@@ -83,6 +103,9 @@ public final class GatewayJsonRpcErrorHandler {
                 case DUPLICATE_IN_FLIGHT -> mapping(409, "GATEWAY_DUPLICATE_IN_FLIGHT");
                 case OUTCOME_UNKNOWN -> mapping(503, "GATEWAY_OUTCOME_UNKNOWN");
                 case RATE_LIMITED -> mapping(429, "GATEWAY_RATE_LIMITED");
+                case PUSH_NOTIFICATION_NOT_SUPPORTED -> mapping(400, "PUSH_NOTIFICATION_NOT_SUPPORTED");
+                case UNSUPPORTED_OPERATION -> mapping(400, "UNSUPPORTED_OPERATION");
+                case EXTENDED_AGENT_CARD_NOT_CONFIGURED -> mapping(400, "EXTENDED_AGENT_CARD_NOT_CONFIGURED");
             };
         }
         if (error instanceof AuthenticationException) {
@@ -99,16 +122,25 @@ public final class GatewayJsonRpcErrorHandler {
 
     private Mapping mapping(int status, String gatewayCode) {
         int rpcCode = switch (gatewayCode) {
+            case "TASK_NOT_FOUND" -> -32001;
             case "GATEWAY_ROUTE_NOT_FOUND" -> -32080;
             case "GATEWAY_ROUTE_CONFLICT" -> -32081;
             case "GATEWAY_POLICY_DENIED" -> -32083;
             case "GATEWAY_AGENT_UNAVAILABLE" -> -32084;
             case "GATEWAY_UPSTREAM_PROTOCOL_ERROR" -> -32006;
+            case "VERSION_NOT_SUPPORTED" -> -32009;
+            case "PUSH_NOTIFICATION_NOT_SUPPORTED" -> -32003;
+            case "UNSUPPORTED_OPERATION" -> -32004;
+            case "EXTENDED_AGENT_CARD_NOT_CONFIGURED" -> -32007;
             case "GATEWAY_RATE_LIMITED" -> -32085;
             case "UNAUTHENTICATED" -> -32001;
             case "INVALID_ARGUMENT", "GATEWAY_INVALID_REQUEST" -> -32602;
             default -> -32603;
         };
+        return new Mapping(status, rpcCode, gatewayCode, A2aErrorPayload.reasonFor(gatewayCode));
+    }
+
+    private Mapping mapping(int status, int rpcCode, String gatewayCode) {
         return new Mapping(status, rpcCode, gatewayCode, A2aErrorPayload.reasonFor(gatewayCode));
     }
 

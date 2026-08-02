@@ -29,6 +29,7 @@ Gateway 负责：
 - 将外部 Agent 的结果返回给调用方。
 
 当前 MVP 不提供运行时 Agent 注册 API。Agent 通过 Gateway YAML 静态注册，修改配置后需要重启 Gateway。
+Gateway 也不会代理任意 REST/OpenAI API；外部服务必须先暴露 A2A 1.0 JSON-RPC 或 HTTP+JSON 接口。
 
 ## 2. 外部 Agent 的最低要求
 
@@ -112,11 +113,28 @@ Card 虽然可以声明 `GRPC`，但当前 Gateway 没有 gRPC 出站 Adapter，
 | --- | --- |
 | 普通消息 | `SendMessage` |
 | 流式消息 | `SendStreamingMessage` |
-| 查询任务 | `GetTask`、`ListTasks` |
+| 查询单个任务 | `GetTask` |
 | 取消任务 | `CancelTask` |
 | 订阅任务 | `SubscribeToTask` |
+| Push Notification 配置 | `CreateTaskPushNotificationConfig`、`GetTaskPushNotificationConfig`、`ListTaskPushNotificationConfigs`、`DeleteTaskPushNotificationConfig` |
+| 扩展 Agent Card | `GetExtendedAgentCard` |
 
-只需要同步消息时，至少实现 `SendMessage`。如果 Gateway 调用方需要查询、取消或订阅任务，外部 Agent 也必须实现对应方法。
+只需要同步消息时，至少实现 `SendMessage`。如果 Gateway 调用方需要查询、取消、订阅、Push Notification 或扩展
+Card，外部 Agent 也必须实现对应方法并在 `capabilities` 中声明相应能力。
+
+Gateway 的 `ListTasks` 是例外：它从本地 `TaskRouteStore` 投影已保存的任务快照，不会向外部 Agent 调用
+`ListTasks`。因此外部 Agent 不需要为了支持 Gateway 的任务列表而实现该方法；Gateway 重启后，默认内存 Store 中的
+列表和路由都会丢失。
+
+外部 Agent 对执行模式和订阅必须满足 A2A 1.0：
+
+- `SendMessage.configuration.returnImmediately` 缺失或为 false 时等待 Task 到达终态或
+  `INPUT_REQUIRED`/`AUTH_REQUIRED`；为 true 时创建 Task 后立即返回当前活动 Task，后台继续执行。
+- `SubscribeToTask` 只接受非终态 Task，第一条流事件必须是当前完整 Task，随后才是
+  `TaskStatusUpdateEvent`/`TaskArtifactUpdateEvent`。
+- 所有 Task、状态事件和 Artifact 事件的 `contextId` 必须非 null 且在同一任务生命周期内一致。
+- 对 `COMPLETED`、`FAILED`、`CANCELED`、`REJECTED` Task 再订阅时返回
+  `UnsupportedOperationError (-32004)`，不能返回 `contextId: null` 的伪完成事件。
 
 ## 3. Gateway 注册配置
 
@@ -173,6 +191,8 @@ a2a:
 | `credential-ref` | 可选；指定出站调用凭证 |
 
 一个逻辑 Agent 可以配置多个实例。每个实例可以有不同的 Card URL、权重和出站凭证，Gateway 会根据健康状态和负载选择实例。
+这些实例必须代表同一个逻辑能力集合。当前快照的 Skills 和 capabilities 以配置中第一个实例的 Card 为准，Gateway
+不会在启动时比较所有实例的完整能力一致性；部署方应保证各实例的 Skill ID、流式、Push 和扩展 Card 能力一致。
 
 ## 4. 网络和 URL 要求
 
@@ -256,6 +276,7 @@ JWT tenant claim == a2a.gateway.agents[].tenant-id
 | 发送消息 | `agent:invoke` 或 `agent:invoke:{agentId}` |
 | 指定 Skill 调用 | `skill:invoke` 或 `skill:invoke:{skillId}` |
 | 查询任务、订阅任务 | `task:read` |
+| 管理 Push Notification 配置 | `task:read` |
 | 取消任务 | `task:cancel` |
 | 获取扩展 Agent Card | `agent:discover` |
 
@@ -312,6 +333,10 @@ Accept: text/event-stream
 
 并返回合法 SSE 事件。Gateway 不会聚合整个流，而是逐事件转发给调用方。
 
+如果 Card 声明 `HTTP+JSON`，其中的 `url` 是 A2A HTTP+JSON 基础地址。Gateway 会在该地址下调用
+`message:send`、`message:stream`、`tasks/{id}`、`tasks/{id}:cancel`、`tasks/{id}:subscribe`、
+Push Notification 配置和 `extendedAgentCard` 等规范相对路径；不要把 `url` 配成某一个具体操作路径。
+
 ## 8. 通过 Gateway 调用
 
 ### 8.1 HTTP+JSON
@@ -339,7 +364,8 @@ Authorization: Bearer <gateway-jwt>
     ]
   },
   "configuration": {
-    "acceptedOutputModes": ["text/plain"]
+    "acceptedOutputModes": ["text/plain"],
+    "returnImmediately": true
   }
 }
 ```
@@ -368,10 +394,19 @@ Authorization: Bearer <gateway-jwt>
           "text": "请研究 A2A 协议的主要能力"
         }
       ]
+    },
+    "configuration": {
+      "returnImmediately": true
     }
   }
 }
 ```
+
+如果 Agent 返回 Task，Gateway Task ID 位于 HTTP+JSON 的 `task.id` 或 JSON-RPC 的 `result.task.id`；Agent 也可以
+直接返回 Message，此时不存在可查询或订阅的 Task ID。任务仍活动时可使用
+`POST /gateway/v1/agents/research-agent/tasks/{taskId}:subscribe`，或发送 JSON-RPC
+`SubscribeToTask` 并将该 Gateway Task ID 放入 `params.id`。两种 Binding 都必须设置
+`Accept: text/event-stream`；订阅首条数据应是完整 Task。
 
 也可以使用路由 Header：
 
@@ -382,10 +417,12 @@ X-A2A-Target-Agent: research-agent
 如果不指定 Agent，Gateway 会依次尝试：
 
 1. 已存在的 Gateway Task 路由；
-2. 显式 Agent 路径；
-3. `X-A2A-Target-Agent`；
+2. 已存在的 Gateway Context 路由；
+3. 显式 Agent 路径或 `X-A2A-Target-Agent`；二者不一致时拒绝请求；
 4. `X-A2A-Target-Skill`；
 5. 当前租户的 `default-agent-by-tenant`。
+
+公开 HTTP/JSON-RPC 入口不会接收任意路由标签；`routing-labels` 只供受信任扩展代码构造 `GatewayCommand` 时使用。
 
 ### 8.3 任务 ID
 
@@ -399,6 +436,8 @@ Gateway 会将外部 Agent 的 Task ID 和 Context ID 映射为 Gateway 自己�
 
 ```http
 GET /gateway/v1/tasks/<gateway-task-id>
+A2A-Version: 1.0
+Authorization: Bearer <gateway-jwt>
 ```
 
 Gateway 重启后，当前 MVP 的内存任务路由会丢失；需要持久化任务路由时，应替换默认的 `TaskRouteStore`。
@@ -440,10 +479,13 @@ GET /gateway/v1/agents/research-agent/card
 ### 9.4 检查健康状态
 
 ```http
-GET /actuator/health/readiness
+GET /actuator/health
 ```
 
-如果实例反复进入 `DEGRADED` 或 `UNHEALTHY`，重点检查 Card 拉取、DNS、TLS、网络策略、接口地址和外部 Agent 的响应状态。
+Starter 注册 `gatewayAgentHealthIndicator` 和 `gatewayDependencyHealthIndicator`，但不会自动创建 readiness/liveness
+分组。只有应用自行配置 Spring Boot Availability Probe 或 health group 后，才能依赖
+`/actuator/health/readiness`。如果实例反复进入 `DEGRADED` 或 `UNHEALTHY`，重点检查 Card 拉取、DNS、TLS、网络策略、
+接口地址和外部 Agent 的响应状态；当前没有独立的上游 `/health` 主动探测。
 
 ## 10. 常见故障
 
@@ -479,6 +521,6 @@ GET /actuator/health/readiness
 
 相关项目文档：
 
-- [Gateway 配置指南](configuration.md)
-- [Gateway API 参考](api-reference.md)
-- [Gateway 运行手册](runbook.md)
+- [Gateway 配置指南](./configuration.md)
+- [Gateway API 参考](./api-reference.md)
+- [Gateway 运行手册](./runbook.md)

@@ -1,432 +1,193 @@
-# A2A4J Server Hello World Sample
+# A2A4J Server Hello World 服务端示例
 
-This is a complete A2A 1.0 (Agent2Agent) protocol server implementation sample that demonstrates how to build a fully functional intelligent agent server using the A2A4J framework.
+本示例使用 A2A4J 构建一个支持 A2A 1.0 JSON-RPC 的 Agent 服务端，展示 Agent Card、同步/异步任务、SSE 流式响应、任务查询与任务订阅。
 
-The JSON-RPC wire method names in the current implementation are `SendMessage`, `SendStreamingMessage`, `GetTask`,
-`CancelTask`, and `SubscribeToTask`. The former 0.2.1-style names such as `message/send` and `message/stream` are
-not accepted by the 1.0 dispatcher.
+## 功能
 
-## Sample Features
+- Agent Card：`GET /.well-known/agent-card.json`
+- JSON-RPC：`POST /a2a/server`
+- 普通方法返回 `application/json`
+- `SendStreamingMessage`、`SubscribeToTask` 返回 `text/event-stream`
+- 示例执行器产生工作状态、文本/代码/摘要工件及最终完成状态
+- `echo-a`、`echo-b` Profile 可作为 Gateway 的两个独立上游 Agent
 
-- ✅ Complete A2A protocol implementation
-- ✅ JSON-RPC 2.0 synchronous and streaming communication
-- ✅ Automatic Agent Card discovery
-- ✅ Multiple artifact type generation (text, code, summaries)
-- ✅ Real-time status updates and progress tracking
-- ✅ Server-Sent Events streaming responses
-- ✅ CORS cross-origin support
-- ✅ Detailed logging
+当前实现使用 A2A 1.0 方法名，例如 `SendMessage`、`SendStreamingMessage`、`GetTask`、`ListTasks`、`CancelTask` 和 `SubscribeToTask`。旧版 `message/send`、`message/stream` 不是 JSON-RPC 1.0 方法名。
 
-## Quick Start
+## 环境要求
 
-### Prerequisites
+- Java 17 或更高版本
+- Maven 3.6 或更高版本，或仓库自带的 Maven Wrapper
+- curl、Postman 等 HTTP/SSE 客户端
 
-- Java 17 or higher
-- Maven 3.6 or higher
-- curl or other HTTP client (for testing)
+## 构建与运行
 
-### Build Project
-
-```bash
-# Clone repository (if you haven't already)
-git clone https://github.com/a2ap/a2a4j.git
-cd a2a4j
-
-# Build entire project
-mvn clean install
-
-# Navigate to sample directory
-cd a2a4j-samples/server-hello-world
-```
-
-### Run Server
-
-```bash
-# Run with Maven
-mvn spring-boot:run
-
-# Or run compiled JAR
-mvn clean package
-java -jar target/server-hello-world-*-exec.jar
-```
-
-The server will start at **http://localhost:8089**.
-
-The server starter defaults to advertising both `JSONRPC` and `HTTP+JSON` in the Agent Card. This sample controller
-implements the JSON-RPC endpoint `/a2a/server`; for a truthful Card, configure
-`a2a.server.protocol-bindings: [JSONRPC]` (the `echo-a` and `echo-b` profiles already do this). The HTTP+JSON
-Gateway endpoint `/message:send` is a northbound Gateway API and is not served by this sample.
-
-### Run the two Gateway demo Agents
-
-The Gateway sample uses two separate instances of this server, rather than an in-process Gateway fixture. Build both
-samples, then start these commands in separate terminals:
+在仓库根目录执行：
 
 ```powershell
-java -jar a2a4j-samples/server-hello-world/target/server-hello-world-0.0.1-exec.jar --spring.profiles.active=echo-a --server.port=8091
-java -jar a2a4j-samples/server-hello-world/target/server-hello-world-0.0.1-exec.jar --spring.profiles.active=echo-b --server.port=8092
+.\mvnw.cmd -pl a2a4j-samples/server-hello-world -am package -DskipTests
+java -jar a2a4j-samples/server-hello-world/target/server-hello-world-0.0.1-exec.jar
 ```
 
-`echo-a` advertises the `hello-world` and `code-generation` skills; `echo-b` advertises `task-summary`. Their Cards are
-configuration-driven in `src/main/resources/application-echo-a.yml` and `application-echo-b.yml`, and truthfully
-advertise the JSON-RPC binding implemented by this sample.
+默认监听 `http://localhost:8089`。默认配置的 Agent Card 可能声明多个协议绑定，而本示例控制器实际提供的是 `/a2a/server` JSON-RPC 端点；作为真实上游使用时，应像 `echo-a`、`echo-b` Profile 一样设置：
 
-### Verify Server Status
+```yaml
+a2a:
+  server:
+    protocol-bindings: [JSONRPC]
+```
+
+## 检查服务与 Agent Card
 
 ```bash
-# Check if server is running
-curl -X GET http://localhost:8089/actuator/health
-
-# Expected response
-{"status":"UP"}
+curl http://localhost:8089/actuator/health
+curl http://localhost:8089/.well-known/agent-card.json
 ```
 
-## A2A Protocol Endpoint Testing
+需要认证的扩展 Agent Card 示例端点为 `/a2a/agent/authenticatedExtendedCard`，示例 API Key 是 `your-secure-api-key`；该固定密钥只用于演示。
 
-### 1. Agent Card Discovery
+## SendMessage：发送消息
 
-Get agent capabilities and metadata information:
-
-```bash
-curl -X GET http://localhost:8089/.well-known/agent-card.json
-```
-
-**Expected Response Example (with `a2a.server.protocol-bindings: [JSONRPC]`):**
-```json
-{
-  "id": "server-hello-world",
-  "name": "A2A Java Server",
-  "description": "A sample A2A agent implemented in Java",
-  "url": "http://localhost:8089/a2a/server",
-  "supportedInterfaces": [
-    {
-      "url": "http://localhost:8089/a2a/server",
-      "protocolBinding": "JSONRPC",
-      "protocolVersion": "1.0"
-    }
-  ],
-  "provider": {
-    "organization": "A2A",
-    "url": "https://github.com/google-a2a/a2a-samples"
-  },
-  "version": "1.0.0",
-  "documentationUrl": "https://google-a2a.github.io/A2A/",
-  "capabilities": {
-    "streaming": true,
-    "pushNotifications": false,
-    "stateTransitionHistory": true
-  },
-  "defaultInputModes": [
-    "text"
-  ],
-  "defaultOutputModes": [
-    "text"
-  ],
-  "skills": [
-    {
-      "id": "hello-world",
-      "name": "hello-world",
-      "description": "A simple hello world skill",
-      "tags": [
-        "greeting",
-        "basic"
-      ],
-      "examples": [
-        "Say hello to me",
-        "Greet me"
-      ],
-      "inputModes": [
-        "text"
-      ],
-      "outputModes": [
-        "text"
-      ]
-    }
-  ]
-}
-```
-
-### 2. Synchronous Message Sending
-
-Send a message and wait for complete response:
+不设置 `configuration.returnImmediately` 时，服务端按默认方式等待执行结果：
 
 ```bash
 curl -X POST http://localhost:8089/a2a/server \
   -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
   -H "A2A-Version: 1.0" \
   -d '{
     "jsonrpc": "2.0",
+    "id": "rpc-001",
     "method": "SendMessage",
     "params": {
       "message": {
-        "role": "user",
-        "parts": [
-          {
-            "text": "Please help me analyze basic machine learning concepts"
-          }
-        ],
-        "messageId": "9229e770-767c-417b-a0b0-f0741243c589"
+        "messageId": "msg-001",
+        "role": "ROLE_USER",
+        "parts": [{"text": "hello", "mediaType": "text/plain"}]
       }
-    },
-    "id": "test-1"
+    }
   }'
 ```
 
-### 3. Streaming Message Sending
+`SendMessage` 本身不是 SSE 方法。即使执行过程中产生多次状态更新，普通请求也只返回一个 JSON-RPC 响应。
 
-Send a message and receive real-time updates:
+## 异步任务：returnImmediately、GetTask 与 SubscribeToTask
+
+若希望快速取得任务快照并让任务在后台继续运行，在 `params` 中设置：
+
+```json
+"configuration": {
+  "returnImmediately": true
+}
+```
+
+完整请求如下：
 
 ```bash
 curl -X POST http://localhost:8089/a2a/server \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -H "A2A-Version: 1.0" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "rpc-async-001",
+    "method": "SendMessage",
+    "params": {
+      "message": {
+        "messageId": "msg-async-001",
+        "role": "ROLE_USER",
+        "parts": [{"text": "hello", "mediaType": "text/plain"}]
+      },
+      "configuration": {"returnImmediately": true}
+    }
+  }'
+```
+
+从响应的 `result.task.id` 或 `result.statusUpdate.taskId` 取得任务 ID，具体字段取决于返回的结果变体。之后可轮询：
+
+```bash
+curl -X POST http://localhost:8089/a2a/server \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -H "A2A-Version: 1.0" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "rpc-get-001",
+    "method": "GetTask",
+    "params": {"id": "替换为任务ID"}
+  }'
+```
+
+也可以在任务仍处于活动状态时订阅：
+
+```bash
+curl -N -X POST http://localhost:8089/a2a/server \
   -H "Content-Type: application/json" \
   -H "Accept: text/event-stream" \
   -H "A2A-Version: 1.0" \
   -d '{
     "jsonrpc": "2.0",
+    "id": "rpc-sub-001",
+    "method": "SubscribeToTask",
+    "params": {"id": "替换为任务ID"}
+  }'
+```
+
+订阅建立后第一条事件是当前完整 `Task` 快照，后续事件继续使用相同的 `taskId` 和 `contextId`。任务已完成、失败、取消或拒绝时不能重新订阅，服务端返回任务不可订阅错误；此时使用 `GetTask` 获取最终结果。
+
+由于示例执行器完成很快，人工复制任务 ID 时任务可能已经完成。使用 Postman 测试订阅时，可先增大示例执行器延迟，或通过脚本立即发起订阅。
+
+## SendStreamingMessage：流式发送消息
+
+```bash
+curl -N -X POST http://localhost:8089/a2a/server \
+  -H "Content-Type: application/json" \
+  -H "Accept: text/event-stream" \
+  -H "A2A-Version: 1.0" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "rpc-stream-001",
     "method": "SendStreamingMessage",
     "params": {
       "message": {
-        "role": "user",
-        "parts": [
-          {
-            "text": "Generate a simple Java class example"
-          }
-        ],
-        "messageId": "9229e770-767c-417b-a0b0-f0741243c589"
+        "messageId": "msg-stream-001",
+        "role": "ROLE_USER",
+        "parts": [{"text": "生成一个 Java 类", "mediaType": "text/plain"}]
       }
-    },
-    "id": "stream-1"
+    }
   }'
 ```
 
-## Advanced Testing Scenarios
+客户端必须按 SSE 持续读取；任务生命周期流的第一条事件是完整 `Task`，后续才是状态或 Artifact 更新，直到终态事件或连接关闭。
 
-### Test Streaming Response Handling
+## 启动 Gateway 演示 Agent
 
-Use more sophisticated tools to observe streaming responses:
+在两个终端分别运行：
 
-```bash
-# Use httpie to observe streaming responses
-echo '{
-  "jsonrpc": "2.0",
-  "method": "SendStreamingMessage",
-  "params": {
-    "message": {
-      "role": "user",
-      "parts": [{"text": "Create a data structure example"}]
-    }
-  },
-  "id": "1"
-}' | http POST localhost:8089/a2a/server \
-  Content-Type:application/json \
-  Accept:text/event-stream
+```powershell
+java -jar a2a4j-samples/server-hello-world/target/server-hello-world-0.0.1-exec.jar `
+  --spring.profiles.active=echo-a --server.port=8091
 ```
 
-### Concurrent Request Testing
-
-Test the server's ability to handle multiple concurrent requests:
-
-```bash
-# Start multiple concurrent requests
-for i in {1..5}; do
-  curl -X POST http://localhost:8089/a2a/server \
-    -H "Content-Type: application/json" \
-    -H "Accept: text/event-stream" \
-    -H "A2A-Version: 1.0" \
-    -d "{
-      \"jsonrpc\": \"2.0\",
-      \"method\": \"SendStreamingMessage\",
-      \"params\": {
-        \"message\": {
-          \"role\": \"user\",
-          \"parts\": [{\"text\": \"Concurrent request $i\"}]
-        }
-      },
-      \"id\": \"concurrent-$i\"
-    }" &
-done
-
-# Wait for all requests to complete
-wait
+```powershell
+java -jar a2a4j-samples/server-hello-world/target/server-hello-world-0.0.1-exec.jar `
+  --spring.profiles.active=echo-b --server.port=8092
 ```
 
-### Error Handling Testing
+`echo-a` 声明 `hello-world`、`code-generation`，`echo-b` 声明 `task-summary`。随后按 [`gateway-hello-world`](../gateway-hello-world/README.md) 文档启动网关。
 
-Test various error scenarios:
+## 代码位置
 
-```bash
-# Test invalid JSON-RPC method
-curl -X POST http://localhost:8089/a2a/server \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "UnknownMethod",
-    "params": {},
-    "id": "error-1"
-  }'
+- `A2AServerController`：Agent Card、JSON-RPC 普通响应和 SSE 入口
+- `DemoAgentExecutor`：状态、工件与终态事件生成
+- `application.yml`：默认 Agent 配置
+- `application-echo-a.yml`、`application-echo-b.yml`：Gateway 演示 Profile
 
-# Test invalid parameters
-curl -X POST http://localhost:8089/a2a/server \
-  -H "Content-Type: application/json" \
-  -d '{
-    "jsonrpc": "2.0",
-    "method": "SendMessage",
-    "params": {
-      "invalidParam": "value"
-    },
-    "id": "error-2"
-  }'
-```
+完整的 11 个 JSON-RPC 方法、请求响应结构、错误码及 HTTP+JSON 对照见[网关 API 文档](../../docs/agent-gateway/api-reference.md)。
 
-## Code Structure Explanation
+## 常见问题
 
-### Core Components
-
-- **`A2AServerApplication`**: Spring Boot main application class, configures CORS and application startup
-- **`A2AServerController`**: REST controller implementing A2A protocol endpoints
-- **`DemoAgentExecutor`**: Sample agent executor demonstrating various event types and artifact generation
-
-### Execution Flow
-
-1. **Task Creation**: Receives `SendMessage` or `SendStreamingMessage` request
-2. **Status Updates**: Sends "Starting", "Analyzing", "Generating" statuses
-3. **Content Generation**: Sends text response in chunks
-4. **Artifact Creation**: Generates code examples and task summaries
-5. **Task Completion**: Sends final completion status and closes event queue
-
-### Configuration Options
-
-Configure in `application.yml`:
-
-```yaml
-server:
-  port: 8089  # Modify server port
-
-a2a:
-  server:
-    id: "server-hello-world"
-    name: "A2A Java Server"
-    description: "A sample A2A agent implemented in Java"
-    version: "1.0.0"
-    url: "http://localhost:${server.port}/a2a/server"
-    provider:
-      name: "A2AP Team"
-      url: "https://github.com/a2ap"
-    documentationUrl: "https://github.com/a2ap/a2a4j"
-    capabilities:
-      streaming: true
-      pushNotifications: false
-      stateTransitionHistory: true
-    defaultInputModes:
-      - "text"
-    defaultOutputModes:
-      - "text"
-    skills:
-      - name: "hello-world"
-        description: "A simple hello world skill"
-        tags:
-          - "greeting"
-          - "basic"
-        examples:
-          - "Say hello to me"
-          - "Greet me"
-        inputModes:
-          - "text"
-        outputModes:
-          - "text"
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Port in use**: Modify `server.port` in `application.yml`
-2. **Java version incompatible**: Ensure using Java 17 or higher
-3. **Dependency issues**: Run `mvn clean install` to rebuild
-
-### Debug Mode
-
-Enable detailed logging:
-
-```yaml
-logging:
-  level:
-    io.github.a2ap: DEBUG
-    org.springframework.web: DEBUG
-```
-
-### Performance Monitoring
-
-Add Spring Boot Actuator endpoints:
-
-```bash
-# View application info
-curl http://localhost:8089/actuator/info
-
-# View health status
-curl http://localhost:8089/actuator/health
-
-# View metrics
-curl http://localhost:8089/actuator/metrics
-```
-
-## Extension Development
-
-### Custom Agent Executor
-
-Create your own `AgentExecutor` implementation:
-
-```java
-@Component
-public class MyCustomExecutor implements AgentExecutor {
-    
-    @Override
-    public Mono<Void> execute(RequestContext context, EventQueue eventQueue) {
-        // Implement custom logic
-        return Mono.empty();
-    }
-    
-    @Override
-    public Mono<Void> cancel(String taskId) {
-        // Implement cancellation logic
-        return Mono.empty();
-    }
-}
-```
-
-### Add Custom Endpoints
-
-Extend controller to support more functionality:
-
-```java
-@RestController
-public class CustomController {
-    
-    @GetMapping("/custom/endpoint")
-    public ResponseEntity<String> customEndpoint() {
-        return ResponseEntity.ok("Custom response");
-    }
-}
-```
-
-## Production Deployment
-
-### Docker Deployment
-
-```dockerfile
-FROM openjdk:17-jre-slim
-COPY target/server-hello-world-*-exec.jar app.jar
-EXPOSE 8089
-ENTRYPOINT ["java", "-jar", "/app.jar"]
-```
-
-## References
-
-- [A2A4J Core Documentation](../../a2a4j-core/README.md)
-- [Spring Boot Starter Documentation](../../a2a4j-spring-boot-starter/a2a4j-server-spring-boot-starter/README.md)
-- [A2A Protocol Specification](https://google-a2a.github.io/A2A/specification/)
-- [JSON-RPC 2.0 Specification](https://www.jsonrpc.org/specification)
-
-## License
-
-This project is licensed under the Apache License 2.0 - see [LICENSE](../../LICENSE) file for details. 
+- 端口占用：通过 `--server.port=新端口` 覆盖。
+- `SendMessage` 返回 `COMPLETED`：未设置 `returnImmediately: true`，或任务在初始快照返回前已快速完成。
+- SSE 没有逐条显示：确认请求头为 `Accept: text/event-stream`，curl 使用 `-N`。
+- `SubscribeToTask` 报错：确认任务 ID 正确且任务尚未进入终态。
+- Agent Card 与实际入口不一致：将 `a2a.server.protocol-bindings` 限定为 `[JSONRPC]`。

@@ -48,7 +48,11 @@ public final class DefaultAuthorizationPolicy implements AuthorizationPolicy {
         if (operation == GatewayCommand.Operation.LIST_TASKS) {
             return require(principal, "task:read");
         }
-        if (operation == GatewayCommand.Operation.GET_TASK || operation == GatewayCommand.Operation.SUBSCRIBE_TO_TASK) {
+        if (operation == GatewayCommand.Operation.GET_TASK || operation == GatewayCommand.Operation.SUBSCRIBE_TO_TASK
+                || operation == GatewayCommand.Operation.CREATE_TASK_PUSH_NOTIFICATION_CONFIG
+                || operation == GatewayCommand.Operation.GET_TASK_PUSH_NOTIFICATION_CONFIG
+                || operation == GatewayCommand.Operation.LIST_TASK_PUSH_NOTIFICATION_CONFIGS
+                || operation == GatewayCommand.Operation.DELETE_TASK_PUSH_NOTIFICATION_CONFIG) {
             return requireTaskId(command).flatMap(ignored -> require(principal, "task:read"));
         }
         if (operation == GatewayCommand.Operation.CANCEL_TASK) {

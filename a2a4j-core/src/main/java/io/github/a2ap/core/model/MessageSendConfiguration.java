@@ -16,6 +16,9 @@
 
 package io.github.a2ap.core.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.util.List;
 import java.util.Objects;
 
@@ -39,10 +42,9 @@ public class MessageSendConfiguration {
      */
     private PushNotificationConfig pushNotificationConfig;
 
-    /**
-     * If the server should treat the client as a blocking request
-     */
-    private Boolean blocking;
+    /** If true, return the created task without waiting for completion. */
+    @JsonProperty("returnImmediately")
+    private Boolean returnImmediately;
 
     /**
      * Default constructor for serialization frameworks.
@@ -55,7 +57,7 @@ public class MessageSendConfiguration {
         this.acceptedOutputModes = acceptedOutputModes;
         this.historyLength = historyLength;
         this.pushNotificationConfig = pushNotificationConfig;
-        this.blocking = blocking;
+        this.returnImmediately = blocking == null ? null : !blocking;
     }
 
     public static Builder builder() {
@@ -86,12 +88,26 @@ public class MessageSendConfiguration {
         this.pushNotificationConfig = pushNotificationConfig;
     }
 
-    public Boolean getBlocking() {
-        return blocking;
+    public Boolean getReturnImmediately() {
+        return returnImmediately;
     }
 
+    public void setReturnImmediately(Boolean returnImmediately) {
+        this.returnImmediately = returnImmediately;
+    }
+
+    /** Compatibility accessor for the pre-1.0 inverse blocking flag. */
+    @Deprecated
+    @JsonIgnore
+    public Boolean getBlocking() {
+        return returnImmediately == null ? null : !returnImmediately;
+    }
+
+    /** Compatibility mutator for the pre-1.0 inverse blocking flag. */
+    @Deprecated
+    @JsonIgnore
     public void setBlocking(Boolean blocking) {
-        this.blocking = blocking;
+        this.returnImmediately = blocking == null ? null : !blocking;
     }
 
     @Override
@@ -104,18 +120,19 @@ public class MessageSendConfiguration {
         return Objects.equals(acceptedOutputModes, that.acceptedOutputModes)
                 && Objects.equals(historyLength, that.historyLength)
                 && Objects.equals(pushNotificationConfig, that.pushNotificationConfig)
-                && Objects.equals(blocking, that.blocking);
+                && Objects.equals(returnImmediately, that.returnImmediately);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(acceptedOutputModes, historyLength, pushNotificationConfig, blocking);
+        return Objects.hash(acceptedOutputModes, historyLength, pushNotificationConfig, returnImmediately);
     }
 
     @Override
     public String toString() {
         return "MessageSendConfiguration{" + "acceptedOutputModes=" + acceptedOutputModes + ", historyLength="
-                + historyLength + ", pushNotificationConfig=" + pushNotificationConfig + ", blocking=" + blocking + '}';
+                + historyLength + ", pushNotificationConfig=" + pushNotificationConfig + ", returnImmediately="
+                + returnImmediately + '}';
     }
 
     /**
@@ -129,7 +146,7 @@ public class MessageSendConfiguration {
 
         private PushNotificationConfig pushNotificationConfig;
 
-        private Boolean blocking;
+        private Boolean returnImmediately;
 
         private Builder() {
         }
@@ -150,12 +167,20 @@ public class MessageSendConfiguration {
         }
 
         public Builder blocking(Boolean blocking) {
-            this.blocking = blocking;
+            this.returnImmediately = blocking == null ? null : !blocking;
+            return this;
+        }
+
+        public Builder returnImmediately(Boolean returnImmediately) {
+            this.returnImmediately = returnImmediately;
             return this;
         }
 
         public MessageSendConfiguration build() {
-            return new MessageSendConfiguration(acceptedOutputModes, historyLength, pushNotificationConfig, blocking);
+            MessageSendConfiguration configuration = new MessageSendConfiguration(acceptedOutputModes, historyLength,
+                    pushNotificationConfig, null);
+            configuration.setReturnImmediately(returnImmediately);
+            return configuration;
         }
     }
 

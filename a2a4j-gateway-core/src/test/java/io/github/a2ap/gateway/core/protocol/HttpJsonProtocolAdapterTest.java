@@ -82,6 +82,19 @@ class HttpJsonProtocolAdapterTest {
     }
 
     @Test
+    void placesContextIdInsideTheA2aMessageForContextOnlyContinuation() throws Exception {
+        GatewayCommand command = new GatewayCommand(GatewayCommand.Operation.SEND_MESSAGE, "tenant-a", principal(),
+                io.github.a2ap.gateway.api.model.TargetHint.empty(), null, "gateway-context",
+                Map.of("messageId", "m-context", "role", "ROLE_USER"), Map.of(), Map.of(), null,
+                ProtocolDescriptor.httpJson(false), "1.0", Set.of());
+
+        OutboundRequest request = adapter.encode(command, httpInstance()).block();
+        var body = new ObjectMapper().readTree(request.body());
+        assertEquals("gateway-context", body.at("/message/contextId").asText());
+        assertTrue(body.get("contextId") == null);
+    }
+
+    @Test
     void encodesEveryStandardHttpJsonOperationWithItsHttpTarget() throws Exception {
         OutboundRequest send = encode(GatewayCommand.Operation.SEND_MESSAGE, null,
                 Map.of("messageId", "m-1", "role", "ROLE_USER"));

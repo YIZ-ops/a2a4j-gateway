@@ -49,6 +49,9 @@ public interface TaskManager {
      */
     Task getTask(String taskId);
 
+    /** Persists the current task snapshot. */
+    Mono<Task> saveTask(Task task);
+
     /**
      * apply take update for task
      *

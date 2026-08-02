@@ -19,7 +19,7 @@
 - ✅ **Spring Boot Integration** - Easy integration with Spring Boot applications
 - ✅ **Reactive Programming Support** - Built on Reactor for scalable, non-blocking operations
 - ✅ **Multiple Content Types** - Support for text, files, and structured data exchange
-- ⚪️ **Agent Card Discovery** - Dynamic capability discovery mechanism
+- ✅ **Agent Card Discovery** - A2A 1.0 Agent Card and Gateway well-known discovery
 - ⚪️ **Push Notification Configuration** - A2A push-notification configuration APIs; delivery integration is application-owned
 - ⚪️ **Enterprise Security** - Authentication and authorization support
 
@@ -257,7 +257,7 @@ Invoke-RestMethod http://localhost:8099/message:send -Method Post `
 ```
 
 Use `X-A2A-Target-Agent: echo-b` or `X-A2A-Target-Skill: code-generation` to select a route. For the complete
-configuration, API matrix, security notes, and MVP limitations, see the [Gateway documentation](docs/agent-gateway/README.md)
+configuration, API matrix, security notes, SSE error behavior, and MVP limitations, see the [Gateway documentation](docs/agent-gateway/README.md)
 and the [Gateway sample README](a2a4j-samples/gateway-hello-world/README.md).
 
 ### A2A4J Core (`a2a4j-core`)
@@ -319,7 +319,7 @@ Complete working examples demonstrating A2A4J usage:
 - [API Reference](a2a4j-core/API_REFERENCE.md)
 - [Hello World Example](a2a4j-samples/server-hello-world/README.md)
 - [Gateway Architecture and MVP Backlog](docs/agent-gateway/README.md)
-- [Gateway Configuration and API Reference](docs/agent-gateway/configuration.md)
+- [Gateway Configuration](docs/agent-gateway/configuration.md) and [API Reference](docs/agent-gateway/api-reference.md)
 - [Gateway Sample](a2a4j-samples/gateway-hello-world/README.md)
 
 ## 🤝 Contributing

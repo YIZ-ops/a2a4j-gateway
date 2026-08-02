@@ -39,7 +39,8 @@ class AgentCardNormalizerTest {
                 {"url":"https://agent.example.test/a2a/http","protocolBinding":"HTTP+JSON","protocolVersion":"1.0"}
               ],
               "version": "1.0.0",
-              "capabilities": {"streaming": true},
+              "capabilities": {"streaming": true, "extensions": [{"uri":"https://example.test/ext/v1",
+                "required": true}]},
               "defaultInputModes": ["text/plain"],
               "defaultOutputModes": ["text/plain"],
               "skills": [{"id":"echo","name":"Echo","description":"Echo text","tags":["text"],
@@ -64,6 +65,9 @@ class AgentCardNormalizerTest {
         assertEquals(2, definition.instances().get(0).interfaces().size());
         assertEquals(checkedAt, definition.instances().get(0).lastCheckedAt());
         assertEquals(64, definition.instances().get(0).lastCardHash().length());
+        Map<?, ?> capabilities = (Map<?, ?>) definition.cardMetadata().get("capabilities");
+        assertEquals("https://example.test/ext/v1",
+                ((Map<?, ?>) ((List<?>) capabilities.get("extensions")).get(0)).get("uri"));
     }
 
     @Test

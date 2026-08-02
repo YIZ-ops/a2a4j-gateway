@@ -17,10 +17,11 @@
 package io.github.a2ap.gateway.spring;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.a2ap.gateway.api.model.AgentDefinition;
 import io.github.a2ap.gateway.api.model.AgentInstance;
-import io.github.a2ap.gateway.api.model.AgentInterface;
 import io.github.a2ap.gateway.api.model.AgentSkillDefinition;
 import io.github.a2ap.gateway.api.model.PrincipalContext;
 import io.github.a2ap.gateway.api.model.TargetHint;
@@ -35,6 +36,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
@@ -49,10 +51,19 @@ public final class GatewayAgentCatalogController {
 
     private final ObjectMapper objectMapper;
 
+    private final GatewaySecurityProperties securityProperties;
+
     /** Creates the catalog controller. */
     public GatewayAgentCatalogController(AgentRegistry registry, ObjectMapper objectMapper) {
+        this(registry, objectMapper, null);
+    }
+
+    /** Creates the catalog controller with optional gateway authentication metadata. */
+    public GatewayAgentCatalogController(AgentRegistry registry, ObjectMapper objectMapper,
+            GatewaySecurityProperties securityProperties) {
         this.registry = registry;
         this.objectMapper = objectMapper;
+        this.securityProperties = securityProperties;
     }
 
     /** Lists logical Agents visible to the authenticated tenant. */
@@ -80,7 +91,69 @@ public final class GatewayAgentCatalogController {
         return principal(exchange).flatMap(principal -> registry.get(principal.tenantId(), agentId)
                 .switchIfEmpty(Mono.error(new GatewayHttpException(404, "GATEWAY_ROUTE_NOT_FOUND",
                         "Agent was not found")))
-                .flatMap(agent -> write(card(agent))));
+                .flatMap(agent -> write(card(agent, exchange))));
+    }
+
+    /** Standard public discovery entry point; an unqualified request uses the deterministic default Card. */
+    @GetMapping(value = "/.well-known/agent-card.json",
+            produces = { "application/json", "application/a2a+json" })
+    public Mono<ResponseEntity<byte[]>> wellKnown(@RequestParam(required = false) String agentId,
+            @RequestParam(required = false) String tenantId, ServerWebExchange exchange) {
+        return discover(agentId, tenantId, exchange);
+    }
+
+    /** Preserves the direct-call shape used by embedders of the controller. */
+    public Mono<ResponseEntity<byte[]>> wellKnown(ServerWebExchange exchange) {
+        return discover(null, null, exchange);
+    }
+
+    /** Agent-specific standard discovery path for gateways hosting multiple logical Agents. */
+    @GetMapping(value = "/.well-known/agents/{agentId}/agent-card.json",
+            produces = { "application/json", "application/a2a+json" })
+    public Mono<ResponseEntity<byte[]>> wellKnownAgent(@PathVariable String agentId,
+            @RequestParam(required = false) String tenantId, ServerWebExchange exchange) {
+        return discover(agentId, tenantId, exchange);
+    }
+
+    /** Projects an extended-card response through the same gateway-owned Card view. */
+    public Mono<Object> projectExtendedCard(String agentId, ServerWebExchange exchange) {
+        return principal(exchange).flatMap(principal -> {
+            Mono<AgentDefinition> selected = agentId == null || agentId.isBlank()
+                    ? registry.list(principal.tenantId(), TargetHint.empty()).next()
+                    : registry.get(principal.tenantId(), agentId);
+            return selected.switchIfEmpty(Mono.error(new GatewayHttpException(404, "GATEWAY_ROUTE_NOT_FOUND",
+                    "Agent was not found"))).map(agent -> card(agent, exchange));
+        });
+    }
+
+    /** Projects the actual upstream extended Card while retaining its extended fields. */
+    public Mono<Object> projectExtendedCard(String agentId, ServerWebExchange exchange, Object upstreamPayload) {
+        return principal(exchange).flatMap(principal -> {
+            Mono<AgentDefinition> selected = agentId == null || agentId.isBlank()
+                    ? registry.list(principal.tenantId(), TargetHint.empty()).next()
+                    : registry.get(principal.tenantId(), agentId);
+            return selected.switchIfEmpty(Mono.error(new GatewayHttpException(404, "GATEWAY_ROUTE_NOT_FOUND",
+                    "Agent was not found"))).map(agent -> projectExtendedPayload(agent, exchange, upstreamPayload));
+        });
+    }
+
+    private Mono<ResponseEntity<byte[]>> discover(String agentId, String tenantId, ServerWebExchange exchange) {
+        return registry.listAll().collectList().map(agents -> agents.stream()
+                        .filter(agent -> tenantId == null || tenantId.equals(agent.tenantId()))
+                        .filter(agent -> agentId == null || agentId.equals(agent.agentId()))
+                        .sorted(java.util.Comparator.comparing(AgentDefinition::tenantId)
+                                .thenComparing(AgentDefinition::agentId)).toList())
+                .flatMap(agents -> {
+                    if (agents.isEmpty()) {
+                        return Mono.error(new GatewayHttpException(404, "GATEWAY_ROUTE_NOT_FOUND",
+                                "no matching Agent Card was found"));
+                    }
+                    if (agents.size() > 1 && (agentId != null || tenantId != null)) {
+                        return Mono.error(new GatewayHttpException(400, "AGENT_ID_REQUIRED",
+                                "agentId and tenantId are required when discovery matches multiple Agents"));
+                    }
+                    return write(card(agents.get(0), exchange));
+                });
     }
 
     private Mono<ResponseEntity<byte[]>> write(Object value) {
@@ -107,16 +180,21 @@ public final class GatewayAgentCatalogController {
         return response;
     }
 
-    private Map<String, Object> card(AgentDefinition agent) {
+    private Map<String, Object> card(AgentDefinition agent, ServerWebExchange exchange) {
         List<Map<String, Object>> interfaces = new ArrayList<>();
-        for (AgentInstance instance : agent.instances()) {
-            for (AgentInterface agentInterface : instance.interfaces()) {
-                Map<String, Object> value = new LinkedHashMap<>();
-                value.put("url", agentInterface.endpointUrl());
-                value.put("protocolBinding", agentInterface.protocolBinding());
-                value.put("protocolVersion", agentInterface.protocolVersion());
-                interfaces.add(value);
-            }
+        boolean jsonRpc = agent.instances().stream().flatMap(instance -> instance.interfaces().stream())
+                .anyMatch(agentInterface -> "JSONRPC".equals(agentInterface.protocolBinding()));
+        boolean httpJson = agent.instances().stream().flatMap(instance -> instance.interfaces().stream())
+                .anyMatch(agentInterface -> "HTTP+JSON".equals(agentInterface.protocolBinding()));
+        if (jsonRpc) {
+            interfaces.add(Map.of("url", gatewayUrl(exchange, "/gateway/v1/agents/"
+                    + pathSegment(agent.agentId()) + "/a2a"),
+                    "protocolBinding", "JSONRPC", "protocolVersion", "1.0"));
+        }
+        if (httpJson) {
+            interfaces.add(Map.of("url", gatewayUrl(exchange, "/gateway/v1/agents/"
+                    + pathSegment(agent.agentId())),
+                    "protocolBinding", "HTTP+JSON", "protocolVersion", "1.0"));
         }
         List<String> inputModes = agent.skills().stream().flatMap(skill -> skill.inputModes().stream()).distinct().toList();
         List<String> outputModes = agent.skills().stream().flatMap(skill -> skill.outputModes().stream()).distinct().toList();
@@ -125,14 +203,108 @@ public final class GatewayAgentCatalogController {
         card.put("description", agent.displayName() + " (Gateway projection)");
         card.put("version", "1.0.0");
         card.put("supportedInterfaces", interfaces);
-        card.put("capabilities", Map.of("streaming", interfaces.stream()
-                .anyMatch(value -> "JSONRPC".equals(value.get("protocolBinding"))
-                        || "HTTP+JSON".equals(value.get("protocolBinding"))), "pushNotifications", false,
-                "extendedAgentCard", false));
+        Map<String, Object> upstreamCapabilities = cardMap(agent.cardMetadata().get("capabilities"));
+        Map<String, Object> capabilities = new LinkedHashMap<>(upstreamCapabilities);
+        capabilities.put("streaming", Boolean.TRUE.equals(upstreamCapabilities.get("streaming")));
+        capabilities.put("pushNotifications", Boolean.TRUE.equals(upstreamCapabilities.get("pushNotifications")));
+        capabilities.put("extendedAgentCard", Boolean.TRUE.equals(upstreamCapabilities.get("extendedAgentCard")));
+        Object legacyExtensions = agent.cardMetadata().get("extensions");
+        if (!capabilities.containsKey("extensions") && legacyExtensions != null) {
+            capabilities.put("extensions", legacyExtensions);
+        }
+        card.put("capabilities", capabilities);
         card.put("defaultInputModes", inputModes.isEmpty() ? List.of("text/plain") : inputModes);
         card.put("defaultOutputModes", outputModes.isEmpty() ? List.of("text/plain") : outputModes);
         card.put("skills", agent.skills().stream().map(this::skill).toList());
+        projectGatewaySecurity(card);
         return card;
+    }
+
+    private String projectExtendedPayload(AgentDefinition agent, ServerWebExchange exchange, Object upstreamPayload) {
+        try {
+            JsonNode root = upstreamPayload instanceof String value ? objectMapper.readTree(value)
+                    : objectMapper.valueToTree(upstreamPayload);
+            if (root == null || !root.isObject()) {
+                return upstreamPayload instanceof String ? (String) upstreamPayload
+                        : objectMapper.writeValueAsString(upstreamPayload);
+            }
+            ObjectNode envelope = (ObjectNode) root.deepCopy();
+            JsonNode cardNode = envelope.has("result") ? envelope.get("result") : envelope;
+            if (cardNode == null || !cardNode.isObject()) {
+                return objectMapper.writeValueAsString(envelope);
+            }
+            ObjectNode card = (ObjectNode) cardNode.deepCopy();
+            card.remove(List.of("signatures", "securitySchemes", "securityRequirements"));
+            JsonNode interfaces = card.get("supportedInterfaces");
+            if (interfaces != null && interfaces.isArray()) {
+                for (JsonNode item : interfaces) {
+                    if (item instanceof ObjectNode interfaceNode) {
+                        String binding = interfaceNode.path("protocolBinding").asText();
+                        String path = "JSONRPC".equals(binding) ? "/gateway/v1/agents/"
+                                + pathSegment(agent.agentId()) + "/a2a" : "/gateway/v1/agents/"
+                                        + pathSegment(agent.agentId());
+                        interfaceNode.put("url", gatewayUrl(exchange, path));
+                    }
+                }
+            }
+            Map<String, Object> projected = objectMapper.convertValue(card, Map.class);
+            projectGatewaySecurity(projected);
+            if (envelope.has("result")) {
+                envelope.set("result", objectMapper.valueToTree(projected));
+                return objectMapper.writeValueAsString(envelope);
+            }
+            return objectMapper.writeValueAsString(projected);
+        }
+        catch (JsonProcessingException ex) {
+            throw new GatewayHttpException(502, "GATEWAY_SERIALIZATION_ERROR",
+                    "could not project upstream extended Agent Card");
+        }
+    }
+
+    private void projectGatewaySecurity(Map<String, Object> card) {
+        if (securityProperties == null || !securityProperties.isEnabled()) {
+            return;
+        }
+        Map<String, Object> schemes = new LinkedHashMap<>();
+        String mode = securityProperties.getMode() == null ? "" : securityProperties.getMode().trim().toLowerCase();
+        String schemeName;
+        if ("api-key".equals(mode)) {
+            schemeName = "gatewayApiKey";
+            Map<String, Object> apiKey = new LinkedHashMap<>();
+            apiKey.put("name", securityProperties.getApiKey().getHeaderName());
+            apiKey.put("location", "header");
+            schemes.put(schemeName, Map.of("apiKeySecurityScheme", apiKey));
+        }
+        else {
+            schemeName = "gatewayJwt";
+            schemes.put(schemeName, Map.of("httpAuthSecurityScheme", Map.of("scheme", "Bearer",
+                    "bearerFormat", "JWT")));
+        }
+        card.put("securitySchemes", schemes);
+        card.put("securityRequirements", List.of(Map.of("schemes", Map.of(schemeName,
+                Map.of("list", List.of())))));
+    }
+
+    private Map<String, Object> cardMap(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> result = new LinkedHashMap<>();
+            map.forEach((key, item) -> result.put(String.valueOf(key), item));
+            return result;
+        }
+        return Map.of();
+    }
+
+    private String gatewayUrl(ServerWebExchange exchange, String path) {
+        java.net.URI uri = exchange.getRequest().getURI();
+        String authority = uri.getRawAuthority();
+        if (uri.getScheme() == null || authority == null) {
+            return path;
+        }
+        return uri.getScheme() + "://" + authority + path;
+    }
+
+    private String pathSegment(String value) {
+        return java.net.URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
     private Map<String, Object> skill(AgentSkillDefinition skill) {
@@ -158,6 +330,9 @@ public final class GatewayAgentCatalogController {
             item.put("endpointUrl", agentInterface.endpointUrl());
             item.put("protocolBinding", agentInterface.protocolBinding());
             item.put("protocolVersion", agentInterface.protocolVersion());
+            if (agentInterface.upstreamTenant() != null) {
+                item.put("tenant", agentInterface.upstreamTenant());
+            }
             return item;
         }).toList());
         if (instance.lastCheckedAt() != null) {

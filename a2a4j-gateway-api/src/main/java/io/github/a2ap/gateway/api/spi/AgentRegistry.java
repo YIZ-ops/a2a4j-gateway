@@ -24,6 +24,11 @@ import reactor.core.publisher.Mono;
 /** Asynchronous source of tenant-scoped logical Agent definitions. */
 public interface AgentRegistry {
 
+    /** Lists enabled Agents that may be used for unauthenticated Card discovery. */
+    default Flux<AgentDefinition> listAll() {
+        return Flux.empty();
+    }
+
     /** Lists Agents visible to a tenant and optional routing hint. */
     Flux<AgentDefinition> list(String tenantId, TargetHint targetHint);
 

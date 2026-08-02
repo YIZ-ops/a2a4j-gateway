@@ -247,6 +247,7 @@ class GatewayHttpJsonDataPlaneE2eTest {
 
     @Test
     void mapsMalformedAndUnavailableUpstreamResponsesToStableGatewayErrors() {
+        WebTestClient jsonRpc = jsonRpcWebClientForAgent(agent(upstream.port()));
         String malformed = "{\"message\":{\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"bad-response\"}]}}";
         String malformedBody = authenticated.post().uri("/message:send").header("A2A-Version", "1.0")
                 .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
@@ -259,7 +260,18 @@ class GatewayHttpJsonDataPlaneE2eTest {
                 .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(unavailable).exchange().expectStatus().isEqualTo(503).expectBody(String.class)
                 .returnResult().getResponseBody();
-        assertTrue(unavailableBody.contains("GATEWAY_AGENT_UNAVAILABLE"));
+        assertTrue(unavailableBody.contains("\"code\":503"), unavailableBody);
+        assertTrue(unavailableBody.contains("\"status\":\"UNAVAILABLE\""), unavailableBody);
+
+        String rpcUnavailableRequest = "{\"jsonrpc\":\"2.0\",\"id\":\"rpc-upstream-error\","
+                + "\"method\":\"SendMessage\",\"params\":{\"message\":{\"role\":\"ROLE_USER\","
+                + "\"parts\":[{\"text\":\"upstream-error\"}]}}}";
+        String rpcUnavailableBody = jsonRpc.post().uri("/gateway/v1/a2a").header("A2A-Version", "1.0")
+                .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
+                .bodyValue(rpcUnavailableRequest).exchange().expectStatus().isEqualTo(503)
+                .expectBody(String.class).returnResult().getResponseBody();
+        assertTrue(rpcUnavailableBody.contains("\"jsonrpc\":\"2.0\""), rpcUnavailableBody);
+        assertTrue(rpcUnavailableBody.contains("\"code\":-32000"), rpcUnavailableBody);
     }
 
     @Test
@@ -292,7 +304,7 @@ class GatewayHttpJsonDataPlaneE2eTest {
         String tenantBody = otherTenant.get().uri("/tasks/{taskId}", gatewayTaskId)
                 .header("A2A-Version", "1.0").exchange().expectStatus().isNotFound().expectBody(String.class)
                 .returnResult().getResponseBody();
-        assertTrue(tenantBody.contains("GATEWAY_ROUTE_NOT_FOUND"));
+        assertTrue(tenantBody.contains("TASK_NOT_FOUND"));
         assertFalse(tenantBody.contains(gatewayTaskId));
     }
 
@@ -459,6 +471,61 @@ class GatewayHttpJsonDataPlaneE2eTest {
         assertTrue(streamBody.contains("TASK_STATE_COMPLETED"), streamBody);
         assertFalse(streamBody.contains("up-1"), streamBody);
         assertFalse(streamBody.contains("up-c"), streamBody);
+
+        WebTestClient jsonRpc = jsonRpcWebClientForAgent(httpJsonAgent(upstream.port()));
+        String rpcRequest = "{\"jsonrpc\":\"2.0\",\"id\":\"rpc-http-only\",\"method\":\"SendMessage\","
+                + "\"params\":{\"message\":{\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"http-json\"}]}}}";
+        String rpcBody = jsonRpc.post().uri("/gateway/v1/a2a").header("A2A-Version", "1.0")
+                .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.APPLICATION_JSON).bodyValue(rpcRequest).exchange().expectStatus().isOk()
+                .expectBody(String.class).returnResult().getResponseBody();
+        JsonNode rpcResponse = objectMapper.readTree(rpcBody);
+        assertEquals("2.0", rpcResponse.path("jsonrpc").asText());
+        assertEquals("rpc-http-only", rpcResponse.path("id").asText());
+        assertTrue(rpcResponse.path("result").has("task"));
+
+        String rpcStreamRequest = rpcRequest.replace("SendMessage", "SendStreamingMessage");
+        FluxExchangeResult<String> rpcStream = jsonRpc.post().uri("/gateway/v1/a2a")
+                .header("A2A-Version", "1.0").header("X-A2A-Target-Agent", "agent-a")
+                .contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM)
+                .bodyValue(rpcStreamRequest).exchange().expectStatus().isOk()
+                .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM).returnResult(String.class);
+        String rpcStreamBody = rpcStream.getResponseBody().collect(Collectors.joining("\n"))
+                .block(Duration.ofSeconds(5));
+        assertTrue(rpcStreamBody.contains("\"jsonrpc\":\"2.0\""), rpcStreamBody);
+        assertTrue(rpcStreamBody.contains("\"result\""), rpcStreamBody);
+        assertFalse(rpcStreamBody.contains("up-1"), rpcStreamBody);
+        assertFalse(rpcStreamBody.contains("up-c"), rpcStreamBody);
+    }
+
+    @Test
+    void returnsUpstreamStreamRejectionsBeforeStartingSse() throws Exception {
+        WebTestClient httpJson = webClientForAgent(httpJsonAgent(upstream.port()));
+        String httpRequest = "{\"message\":{\"role\":\"ROLE_USER\",\"parts\":[{\"text\":"
+                + "\"stream-upstream-error\"}]}}";
+        String httpBody = httpJson.post().uri("/message:stream").header("A2A-Version", "1.0")
+                .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM).bodyValue(httpRequest).exchange().expectStatus().isNotFound()
+                .expectHeader().contentTypeCompatibleWith("application/a2a+json").expectBody(String.class)
+                .returnResult().getResponseBody();
+        JsonNode httpError = objectMapper.readTree(httpBody);
+        assertEquals(404, httpError.at("/error/code").asInt());
+        assertTrue(httpError.toString().contains("TASK_NOT_FOUND"), httpBody);
+        assertFalse(httpBody.contains("data:"));
+
+        WebTestClient jsonRpc = jsonRpcWebClientForAgent(httpJsonAgent(upstream.port()));
+        String rpcRequest = "{\"jsonrpc\":\"2.0\",\"id\":\"rpc-stream-error\","
+                + "\"method\":\"SendStreamingMessage\",\"params\":{\"message\":{"
+                + "\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"stream-upstream-error\"}]}}}";
+        String rpcBody = jsonRpc.post().uri("/gateway/v1/a2a").header("A2A-Version", "1.0")
+                .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM).bodyValue(rpcRequest).exchange().expectStatus().isNotFound()
+                .expectHeader().contentTypeCompatibleWith(MediaType.APPLICATION_JSON).expectBody(String.class)
+                .returnResult().getResponseBody();
+        JsonNode rpcError = objectMapper.readTree(rpcBody);
+        assertEquals("rpc-stream-error", rpcError.path("id").asText());
+        assertEquals(-32001, rpcError.at("/error/code").asInt());
+        assertFalse(rpcBody.contains("data:"));
     }
 
     @Test
@@ -552,14 +619,19 @@ class GatewayHttpJsonDataPlaneE2eTest {
                 .header("A2A-Version", "1.0").header("X-A2A-Target-Agent", "agent-a").exchange().expectStatus().isOk()
                 .expectBody(String.class)
                 .returnResult().getResponseBody();
-        assertTrue(httpList.contains("\"task\""));
+        assertTrue(httpList.contains("\"tasks\""));
+        assertTrue(httpList.contains("\"pageSize\""));
+        assertTrue(httpList.contains("\"totalSize\""));
+        assertTrue(httpList.contains("\"nextPageToken\":\"\""));
         String rpcList = "{\"jsonrpc\":\"2.0\",\"id\":\"rpc-list\",\"method\":\"ListTasks\","
                 + "\"params\":{\"limit\":5}}";
         String rpcListBody = jsonRpc.post().uri("/gateway/v1/a2a").header("A2A-Version", "1.0")
                 .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON).bodyValue(rpcList).exchange().expectStatus().isOk()
                 .expectBody(String.class).returnResult().getResponseBody();
-        assertTrue(rpcListBody.contains("\"task\""));
+        assertTrue(rpcListBody.contains("\"tasks\""));
+        assertTrue(rpcListBody.contains("\"pageSize\""));
+        assertTrue(rpcListBody.contains("\"totalSize\""));
 
         String httpRequest = "{\"message\":{\"role\":\"ROLE_USER\",\"parts\":[{\"text\":\"subscribe-http\"}]}}";
         String httpSend = httpJson.post().uri("/message:send").header("A2A-Version", "1.0")
@@ -568,14 +640,11 @@ class GatewayHttpJsonDataPlaneE2eTest {
                 .getResponseBody();
         String httpTaskId = objectMapper.readTree(httpSend).path("task").path("id").asText();
         assertFalse(httpTaskId.isBlank());
-        FluxExchangeResult<String> httpSubscribed = httpJson.post().uri("/tasks/{taskId}:subscribe", httpTaskId)
+        String httpSubscribeError = httpJson.post().uri("/tasks/{taskId}:subscribe", httpTaskId)
                 .header("A2A-Version", "1.0").contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM)
-                .bodyValue("{}").exchange().expectStatus().isOk()
-                .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM).returnResult(String.class);
-        String httpSubscribeBody = httpSubscribed.getResponseBody().collect(Collectors.joining("\n"))
-                .block(Duration.ofSeconds(5));
-        assertTrue(httpSubscribeBody.contains(httpTaskId), httpSubscribeBody);
-        assertTrue(httpSubscribeBody.contains("TASK_STATE_COMPLETED"), httpSubscribeBody);
+                .bodyValue("{}").exchange().expectStatus().isBadRequest().expectBody(String.class).returnResult()
+                .getResponseBody();
+        assertTrue(httpSubscribeError.contains("UNSUPPORTED_OPERATION"), httpSubscribeError);
         String httpCancel = httpJson.post().uri("/tasks/{taskId}:cancel", httpTaskId).header("A2A-Version", "1.0")
                 .contentType(MediaType.APPLICATION_JSON).bodyValue("{}").exchange().expectStatus().isOk()
                 .expectBody(String.class).returnResult().getResponseBody();
@@ -591,15 +660,11 @@ class GatewayHttpJsonDataPlaneE2eTest {
         assertFalse(rpcTaskId.isBlank());
         String rpcSubscribe = "{\"jsonrpc\":\"2.0\",\"id\":\"rpc-subscribe\",\"method\":\"SubscribeToTask\","
                 + "\"params\":{\"id\":\"" + rpcTaskId + "\"}}";
-        FluxExchangeResult<String> rpcSubscribed = jsonRpc.post().uri("/gateway/v1/a2a")
+        String rpcSubscribeError = jsonRpc.post().uri("/gateway/v1/a2a")
                 .header("A2A-Version", "1.0").header("X-A2A-Target-Agent", "agent-a")
                 .contentType(MediaType.APPLICATION_JSON).accept(MediaType.TEXT_EVENT_STREAM).bodyValue(rpcSubscribe)
-                .exchange().expectStatus().isOk().expectHeader().contentTypeCompatibleWith(MediaType.TEXT_EVENT_STREAM)
-                .returnResult(String.class);
-        String rpcSubscribeBody = rpcSubscribed.getResponseBody().collect(Collectors.joining("\n"))
-                .block(Duration.ofSeconds(5));
-        assertTrue(rpcSubscribeBody.contains(rpcTaskId), rpcSubscribeBody);
-        assertTrue(rpcSubscribeBody.contains("TASK_STATE_COMPLETED"), rpcSubscribeBody);
+                .exchange().expectStatus().isBadRequest().expectBody(String.class).returnResult().getResponseBody();
+        assertTrue(rpcSubscribeError.contains("-32004"), rpcSubscribeError);
         String rpcCancel = "{\"jsonrpc\":\"2.0\",\"id\":\"rpc-cancel-task\",\"method\":\"CancelTask\","
                 + "\"params\":{\"id\":\"" + rpcTaskId + "\"}}";
         String rpcCancelBody = jsonRpc.post().uri("/gateway/v1/a2a").header("A2A-Version", "1.0")
@@ -639,7 +704,8 @@ class GatewayHttpJsonDataPlaneE2eTest {
                 .header("X-A2A-Target-Agent", "agent-a").contentType(MediaType.APPLICATION_JSON)
                 .accept(MediaType.APPLICATION_JSON).bodyValue(rpcRequest).exchange().expectStatus().isBadRequest()
                 .expectBody(String.class).returnResult().getResponseBody();
-        assertTrue(invalidVersion.contains("INVALID_ARGUMENT"));
+        assertTrue(invalidVersion.contains("VERSION_NOT_SUPPORTED"));
+        assertTrue(invalidVersion.contains("-32009"));
     }
 
     private GatewayHttpJsonController controllerForTest() {
@@ -725,6 +791,12 @@ class GatewayHttpJsonDataPlaneE2eTest {
             if (body.contains("bad-response")) {
                 return response.status(200).header("Content-Type", "application/json")
                         .sendString(Mono.just("{\"invalid\":")).then();
+            }
+            if (body.contains("stream-upstream-error")) {
+                return response.status(404).header("Content-Type", "application/a2a+json")
+                        .sendString(Mono.just("{\"error\":{\"code\":404,\"status\":\"NOT_FOUND\","
+                                + "\"message\":\"missing\"}}"))
+                        .then();
             }
             if (body.contains("upstream-error")) {
                 return response.status(503).header("Content-Type", "application/json")
@@ -823,7 +895,7 @@ class GatewayHttpJsonDataPlaneE2eTest {
         return new AgentDefinition("tenant-a", "agent-a", "Agent A", true,
                 List.of(new AgentSkillDefinition("echo", "Echo", "Echo", List.of("sample"),
                         List.of("text/plain"), List.of("text/plain"))), Map.of(), ProtocolPolicy.a2aV1Mvp(),
-                List.of(instance));
+                List.of(instance), Map.of("capabilities", Map.of("streaming", true)));
     }
 
     private AgentDefinition agentWithInstances(int firstPort, int secondPort) {

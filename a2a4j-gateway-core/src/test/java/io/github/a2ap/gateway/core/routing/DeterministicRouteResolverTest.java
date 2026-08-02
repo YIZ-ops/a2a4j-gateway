@@ -103,6 +103,25 @@ class DeterministicRouteResolverTest {
         assertEquals(RouteResolutionException.Code.AUTHORIZATION_DENIED, error.code());
     }
 
+    @Test
+    void resolvesContextOnlyContinuationToTheMostRecentPrincipalRoute() {
+        InMemoryAgentRegistry registry = registry(agent("agent-a", Map.of(), "echo"));
+        io.github.a2ap.gateway.core.store.InMemoryTaskRouteStore routes =
+                new io.github.a2ap.gateway.core.store.InMemoryTaskRouteStore(8);
+        routes.save(new TaskRoute("tenant-a", "task-1", "context-1", "agent-a", "instance-1", "jsonrpc",
+                "upstream-task", "upstream-context", "JSONRPC", "1.0", "fp-a", null, TaskRoute.State.ACTIVE,
+                Instant.now(), Instant.now(), null)).block();
+        DeterministicRouteResolver resolver = new DeterministicRouteResolver(registry, routes,
+                new DefaultAuthorizationPolicy(), Map.of());
+
+        GatewayCommand continuation = new GatewayCommand(GatewayCommand.Operation.SEND_MESSAGE, "tenant-a", PRINCIPAL,
+                new TargetHint("agent-a", null, Map.of()), null, "context-1", Map.of(), Map.of(), Map.of(), null,
+                ProtocolDescriptor.jsonRpc(), "1.0", Set.of());
+        var decision = resolver.resolve(continuation, context()).block();
+        assertEquals("agent-a", decision.agentId());
+        assertEquals("context-affinity", decision.matchedRules().get("rule"));
+    }
+
     private InMemoryAgentRegistry registry(AgentDefinition... agents) {
         InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
         registry.replaceAll(List.of(agents));

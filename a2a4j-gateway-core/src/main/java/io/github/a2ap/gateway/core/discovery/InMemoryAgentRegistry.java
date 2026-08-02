@@ -106,6 +106,11 @@ public final class InMemoryAgentRegistry implements AgentRegistry {
     }
 
     @Override
+    public Flux<AgentDefinition> listAll() {
+        return Flux.fromIterable(snapshot.get().values()).filter(AgentDefinition::enabled);
+    }
+
+    @Override
     public Mono<AgentDefinition> get(String tenantId, String agentId) {
         return Mono.justOrEmpty(snapshot.get().get(key(tenantId, agentId)))
                 .filter(AgentDefinition::enabled);
@@ -157,7 +162,7 @@ public final class InMemoryAgentRegistry implements AgentRegistry {
             }
         }
         return new AgentDefinition(agent.tenantId(), agent.agentId(), agent.displayName(), agent.enabled(),
-                agent.skills(), agent.routingLabels(), agent.protocolPolicy(), instances);
+                agent.skills(), agent.routingLabels(), agent.protocolPolicy(), instances, agent.cardMetadata());
     }
 
     private static String key(String tenantId, String agentId) {

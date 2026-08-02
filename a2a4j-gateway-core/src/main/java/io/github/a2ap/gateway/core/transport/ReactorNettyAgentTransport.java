@@ -153,10 +153,6 @@ public final class ReactorNettyAgentTransport implements AgentTransport, AutoClo
                 return Mono.error(new AgentTransportException(AgentTransportException.Code.RESPONSE_TOO_LARGE,
                         "upstream response exceeds configured size"));
             }
-            if (response.status().code() < 200 || response.status().code() >= 300) {
-                return Mono.error(new AgentTransportException(AgentTransportException.Code.UPSTREAM_HTTP,
-                        "upstream returned HTTP " + response.status().code()));
-            }
             Map<String, String> headers = new LinkedHashMap<>();
             response.responseHeaders().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));
             return Mono.just(new OutboundResponse(request.protocol(), response.status().code(),
@@ -176,10 +172,17 @@ public final class ReactorNettyAgentTransport implements AgentTransport, AutoClo
         return receiver.response((response, content) -> {
             int statusCode = response.status().code();
             if (statusCode < 200 || statusCode >= 300) {
+                Map<String, String> headers = new LinkedHashMap<>();
+                response.responseHeaders().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));
                 return content.asString(StandardCharsets.UTF_8).collectList()
-                        .flatMapMany(parts -> Flux.<OutboundResponse>error(new AgentTransportException(
-                                AgentTransportException.Code.UPSTREAM_HTTP,
-                                "upstream returned HTTP " + statusCode)));
+                        .flatMapMany(parts -> {
+                            String body = String.join("", parts);
+                            if (body.getBytes(StandardCharsets.UTF_8).length > maxResponseBytes) {
+                                return Flux.error(new AgentTransportException(AgentTransportException.Code.RESPONSE_TOO_LARGE,
+                                        "upstream response exceeds configured size"));
+                            }
+                            return Flux.just(new OutboundResponse(request.protocol(), statusCode, body, headers, true));
+                        });
             }
             Map<String, String> headers = new LinkedHashMap<>();
             response.responseHeaders().forEach(entry -> headers.putIfAbsent(entry.getKey(), entry.getValue()));

@@ -61,6 +61,16 @@ public class A2AError extends RuntimeException {
      */
     public static final int AUTHORIZATION_ERROR = 1005;
 
+    /**
+     * A2A 1.0 task-not-found protocol error code.
+     */
+    public static final int PROTOCOL_TASK_NOT_FOUND = -32001;
+
+    /**
+     * A2A 1.0 unsupported-operation protocol error code.
+     */
+    public static final int UNSUPPORTED_OPERATION = -32004;
+
     private int code;
 
     private Object data;

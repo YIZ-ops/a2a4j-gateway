@@ -57,7 +57,13 @@ public final class GatewayForwardingException extends RuntimeException {
         /** An earlier request's upstream outcome cannot be safely retried. */
         OUTCOME_UNKNOWN,
         /** A tenant or principal exceeded the configured stream quota. */
-        RATE_LIMITED
+        RATE_LIMITED,
+        /** The selected upstream Agent does not advertise push notification support. */
+        PUSH_NOTIFICATION_NOT_SUPPORTED,
+        /** The selected upstream Agent does not advertise a requested capability. */
+        UNSUPPORTED_OPERATION,
+        /** The selected upstream Agent does not expose an extended Agent Card. */
+        EXTENDED_AGENT_CARD_NOT_CONFIGURED
     }
 
 }

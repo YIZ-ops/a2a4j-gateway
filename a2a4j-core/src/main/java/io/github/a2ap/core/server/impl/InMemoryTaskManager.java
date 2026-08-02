@@ -133,6 +133,12 @@ public class InMemoryTaskManager implements TaskManager {
     }
 
     @Override
+    public Mono<Task> saveTask(Task task) {
+        taskStore.save(task);
+        return Mono.just(task);
+    }
+
+    @Override
     public Mono<Task> applyTaskUpdate(Task task, List<TaskUpdate> taskUpdates) {
         if (taskUpdates == null || taskUpdates.isEmpty()) {
             return Mono.just(task);

@@ -67,6 +67,94 @@ class GatewayAgentCatalogControllerTest {
         assertEquals(404, error.status());
     }
 
+    @Test
+    void removesUpstreamSignaturesAndProjectsGatewaySecurity() throws Exception {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        AgentDefinition original = agent("tenant-a", "agent-a");
+        AgentDefinition withCardMetadata = new AgentDefinition(original.tenantId(), original.agentId(),
+                original.displayName(), original.enabled(), original.skills(), original.routingLabels(),
+                original.protocolPolicy(), original.instances(), Map.of("signatures", List.of(Map.of("alg", "RS256")),
+                        "securityRequirements", List.of(Map.of("upstream", List.of())),
+                        "capabilities", Map.of("streaming", true)));
+        registry.replace(withCardMetadata);
+        GatewaySecurityProperties security = new GatewaySecurityProperties();
+        security.setEnabled(true);
+        security.setMode("jwt");
+        GatewayAgentCatalogController controller = new GatewayAgentCatalogController(registry, objectMapper, security);
+
+        JsonNode card = objectMapper.readTree(controller.card("agent-a", exchange("/card", "tenant-a"))
+                .block().getBody());
+        assertTrue(card.path("signatures").isMissingNode());
+        assertEquals("Bearer", card.at("/securitySchemes/gatewayJwt/httpAuthSecurityScheme/scheme").asText());
+        assertEquals("JWT", card.at("/securitySchemes/gatewayJwt/httpAuthSecurityScheme/bearerFormat").asText());
+        assertEquals(List.of(), objectMapper.convertValue(card.at("/securityRequirements/0/schemes/gatewayJwt/list"),
+                List.class));
+    }
+
+    @Test
+    void discoversEachCardWithoutAuthenticationUsingTheStandardAgentPath() throws Exception {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.replace(agent("tenant-a", "agent-a"));
+        registry.replace(agent("tenant-a", "agent-b"));
+        GatewayAgentCatalogController controller = new GatewayAgentCatalogController(registry, objectMapper);
+
+        JsonNode card = objectMapper.readTree(controller.wellKnownAgent("agent-b", "tenant-a",
+                exchange("/.well-known/agents/agent-b/agent-card.json", "tenant-a")).block().getBody());
+        assertEquals("agent-b", card.path("name").asText());
+    }
+
+    @Test
+    void exposesTheStandardDiscoveryEntryPointWithoutAuthenticationWhenSelected() throws Exception {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.replace(agent("tenant-a", "agent-a"));
+        GatewayAgentCatalogController controller = new GatewayAgentCatalogController(registry, objectMapper);
+
+        JsonNode card = objectMapper.readTree(controller.wellKnown(
+                MockServerWebExchange.from(MockServerHttpRequest.get("/.well-known/agent-card.json")
+                        .build())).block().getBody());
+        assertEquals("agent-a", card.path("name").asText());
+    }
+
+    @Test
+    void selectsTheDeterministicDefaultForUnqualifiedMultiAgentDiscovery() throws Exception {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.replace(agent("tenant-b", "agent-z"));
+        registry.replace(agent("tenant-a", "agent-a"));
+        GatewayAgentCatalogController controller = new GatewayAgentCatalogController(registry, objectMapper);
+
+        JsonNode card = objectMapper.readTree(controller.wellKnown(
+                MockServerWebExchange.from(MockServerHttpRequest.get("/.well-known/agent-card.json")
+                        .build())).block().getBody());
+        assertEquals("agent-a", card.path("name").asText());
+    }
+
+    @Test
+    void projectsTheActualExtendedCardWithoutDroppingItsExtendedFields() throws Exception {
+        InMemoryAgentRegistry registry = new InMemoryAgentRegistry();
+        registry.replace(agent("tenant-a", "agent-a"));
+        GatewaySecurityProperties security = new GatewaySecurityProperties();
+        security.setEnabled(true);
+        security.setMode("jwt");
+        GatewayAgentCatalogController controller = new GatewayAgentCatalogController(registry, objectMapper, security);
+        String upstream = "{\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"name\":\"extended\","
+                + "\"provider\":{\"organization\":\"Research\"},"
+                + "\"documentationUrl\":\"https://internal.example/docs\","
+                + "\"capabilities\":{\"extensions\":[{\"uri\":\"https://example.test/ext/v1\"}]},"
+                + "\"supportedInterfaces\":[{\"url\":\"https://internal.example/a2a\","
+                + "\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\"}],"
+                + "\"signatures\":[{\"alg\":\"RS256\"}],"
+                + "\"securityRequirements\":[{\"schemes\":{\"upstream\":{\"list\":[]}}}]}}";
+
+        JsonNode projected = objectMapper.readTree((String) controller.projectExtendedCard("agent-a",
+                exchange("/gateway/v1/a2a", "tenant-a"), upstream).block());
+        assertEquals("Research", projected.at("/result/provider/organization").asText());
+        assertEquals("https://example.test/ext/v1", projected.at("/result/capabilities/extensions/0/uri").asText());
+        assertTrue(projected.at("/result/supportedInterfaces/0/url").asText().contains("/gateway/v1/agents/agent-a/a2a"));
+        assertTrue(projected.at("/result/signatures").isMissingNode());
+        assertEquals("Bearer", projected.at("/result/securitySchemes/gatewayJwt/httpAuthSecurityScheme/scheme")
+                .asText());
+    }
+
     private ServerWebExchange exchange(String path, String tenantId) {
         PrincipalContext principal = new PrincipalContext(tenantId, "catalog-user", Set.of("*"), Map.of(),
                 "catalog-fingerprint");

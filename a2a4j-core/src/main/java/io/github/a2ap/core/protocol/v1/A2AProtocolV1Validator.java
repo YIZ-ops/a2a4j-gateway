@@ -100,6 +100,23 @@ public final class A2AProtocolV1Validator {
         if (request.has("params") && !request.get("params").isObject()) {
             throw invalid("JSON-RPC params must be an object");
         }
+        JsonNode params = request.has("params") ? request.get("params") : null;
+        if (params == null) {
+            params = new ObjectMapper().createObjectNode();
+        }
+        switch (method) {
+            case "SendMessage", "SendStreamingMessage" -> requireObjectField(params, "message");
+            case "GetTask", "CancelTask", "SubscribeToTask" -> requireTextField(params, "id");
+            case "CreateTaskPushNotificationConfig", "ListTaskPushNotificationConfigs" ->
+                    requireTextField(params, "taskId");
+            case "GetTaskPushNotificationConfig", "DeleteTaskPushNotificationConfig" -> {
+                requireTextField(params, "taskId");
+                requireTextField(params, "id");
+            }
+            default -> {
+                // ListTasks and GetExtendedAgentCard have no additional required parameter.
+            }
+        }
     }
 
     /**
@@ -139,6 +156,19 @@ public final class A2AProtocolV1Validator {
         if (!node.has(field) || !node.get(field).isArray()
                 || (nonEmpty && node.get(field).isEmpty())) {
             throw invalid(field + " must be a non-empty array");
+        }
+    }
+
+    private static void requireObjectField(JsonNode node, String field) {
+        if (node == null || !node.has(field) || !node.get(field).isObject()) {
+            throw invalid(field + " must be an object");
+        }
+    }
+
+    private static void requireTextField(JsonNode node, String field) {
+        if (node == null || !node.has(field) || !node.get(field).isTextual()
+                || node.get(field).asText().isBlank()) {
+            throw invalid(field + " must be a non-empty string");
         }
     }
 
