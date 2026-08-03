@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.a2ap.gateway.api.model.GatewayResult;
 import io.github.a2ap.gateway.api.model.IdempotencyRecord;
+import io.github.a2ap.gateway.core.exception.IdempotencyConflictException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

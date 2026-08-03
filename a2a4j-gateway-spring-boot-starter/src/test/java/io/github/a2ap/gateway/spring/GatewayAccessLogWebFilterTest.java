@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.a2ap.gateway.api.GatewayHeaders;
 import io.github.a2ap.gateway.api.model.GatewayAuditEvent;
+import io.github.a2ap.gateway.spring.observability.GatewayAccessLogWebFilter;
+import io.github.a2ap.gateway.spring.support.GatewayRequestIdResolver;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;

@@ -19,7 +19,9 @@ package io.github.a2ap.gateway.spring;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import io.github.a2ap.gateway.core.forwarding.GatewayForwardingException;
+import io.github.a2ap.gateway.core.exception.GatewayForwardingException;
+import io.github.a2ap.gateway.spring.error.GatewayHttpErrorHandler;
+import io.github.a2ap.gateway.spring.error.GatewayJsonRpcErrorHandler;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;

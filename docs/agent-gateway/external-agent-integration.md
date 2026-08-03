@@ -119,12 +119,9 @@ Card 虽然可以声明 `GRPC`，但当前 Gateway 没有 gRPC 出站 Adapter，
 | Push Notification 配置 | `CreateTaskPushNotificationConfig`、`GetTaskPushNotificationConfig`、`ListTaskPushNotificationConfigs`、`DeleteTaskPushNotificationConfig` |
 | 扩展 Agent Card | `GetExtendedAgentCard` |
 
-只需要同步消息时，至少实现 `SendMessage`。如果 Gateway 调用方需要查询、取消、订阅、Push Notification 或扩展
-Card，外部 Agent 也必须实现对应方法并在 `capabilities` 中声明相应能力。
+只需要同步消息时，至少实现 `SendMessage`。如果 Gateway 调用方需要查询、取消、订阅、Push Notification 或扩展 Card，外部 Agent 也必须实现对应方法并在 `capabilities` 中声明相应能力。
 
-Gateway 的 `ListTasks` 是例外：它从本地 `TaskRouteStore` 投影已保存的任务快照，不会向外部 Agent 调用
-`ListTasks`。因此外部 Agent 不需要为了支持 Gateway 的任务列表而实现该方法；Gateway 重启后，默认内存 Store 中的
-列表和路由都会丢失。
+Gateway 的 `ListTasks` 是例外：它从本地 `TaskRouteStore` 投影已保存的任务快照，不会向外部 Agent 调用`ListTasks`。因此外部 Agent 不需要为了支持 Gateway 的任务列表而实现该方法；Gateway 重启后，默认内存 Store 中的列表和路由都会丢失。
 
 外部 Agent 对执行模式和订阅必须满足 A2A 1.0：
 
@@ -191,8 +188,7 @@ a2a:
 | `credential-ref` | 可选；指定出站调用凭证 |
 
 一个逻辑 Agent 可以配置多个实例。每个实例可以有不同的 Card URL、权重和出站凭证，Gateway 会根据健康状态和负载选择实例。
-这些实例必须代表同一个逻辑能力集合。当前快照的 Skills 和 capabilities 以配置中第一个实例的 Card 为准，Gateway
-不会在启动时比较所有实例的完整能力一致性；部署方应保证各实例的 Skill ID、流式、Push 和扩展 Card 能力一致。
+这些实例必须代表同一个逻辑能力集合。当前快照的 Skills 和 capabilities 以配置中第一个实例的 Card 为准，Gateway 不会在启动时比较所有实例的完整能力一致性；部署方应保证各实例的 Skill ID、流式、Push 和扩展 Card 能力一致。
 
 ## 4. 网络和 URL 要求
 
@@ -333,9 +329,7 @@ Accept: text/event-stream
 
 并返回合法 SSE 事件。Gateway 不会聚合整个流，而是逐事件转发给调用方。
 
-如果 Card 声明 `HTTP+JSON`，其中的 `url` 是 A2A HTTP+JSON 基础地址。Gateway 会在该地址下调用
-`message:send`、`message:stream`、`tasks/{id}`、`tasks/{id}:cancel`、`tasks/{id}:subscribe`、
-Push Notification 配置和 `extendedAgentCard` 等规范相对路径；不要把 `url` 配成某一个具体操作路径。
+如果 Card 声明 `HTTP+JSON`，其中的 `url` 是 A2A HTTP+JSON 基础地址。Gateway 会在该地址下调用`message:send`、`message:stream`、`tasks/{id}`、`tasks/{id}:cancel`、`tasks/{id}:subscribe`、Push Notification 配置和 `extendedAgentCard` 等规范相对路径；不要把 `url` 配成某一个具体操作路径。
 
 ## 8. 通过 Gateway 调用
 
@@ -402,8 +396,7 @@ Authorization: Bearer <gateway-jwt>
 }
 ```
 
-如果 Agent 返回 Task，Gateway Task ID 位于 HTTP+JSON 的 `task.id` 或 JSON-RPC 的 `result.task.id`；Agent 也可以
-直接返回 Message，此时不存在可查询或订阅的 Task ID。任务仍活动时可使用
+如果 Agent 返回 Task，Gateway Task ID 位于 HTTP+JSON 的 `task.id` 或 JSON-RPC 的 `result.task.id`；Agent 也可以直接返回 Message，此时不存在可查询或订阅的 Task ID。任务仍活动时可使用
 `POST /gateway/v1/agents/research-agent/tasks/{taskId}:subscribe`，或发送 JSON-RPC
 `SubscribeToTask` 并将该 Gateway Task ID 放入 `params.id`。两种 Binding 都必须设置
 `Accept: text/event-stream`；订阅首条数据应是完整 Task。
@@ -482,10 +475,7 @@ GET /gateway/v1/agents/research-agent/card
 GET /actuator/health
 ```
 
-Starter 注册 `gatewayAgentHealthIndicator` 和 `gatewayDependencyHealthIndicator`，但不会自动创建 readiness/liveness
-分组。只有应用自行配置 Spring Boot Availability Probe 或 health group 后，才能依赖
-`/actuator/health/readiness`。如果实例反复进入 `DEGRADED` 或 `UNHEALTHY`，重点检查 Card 拉取、DNS、TLS、网络策略、
-接口地址和外部 Agent 的响应状态；当前没有独立的上游 `/health` 主动探测。
+Starter 注册 `gatewayAgentHealthIndicator` 和 `gatewayDependencyHealthIndicator`，但不会自动创建 readiness/liveness 分组。只有应用自行配置 Spring Boot Availability Probe 或 health group 后，才能依赖`/actuator/health/readiness`。如果实例反复进入 `DEGRADED` 或 `UNHEALTHY`，重点检查 Card 拉取、DNS、TLS、网络策略、接口地址和外部 Agent 的响应状态；当前没有独立的上游 `/health` 主动探测。
 
 ## 10. 常见故障
 

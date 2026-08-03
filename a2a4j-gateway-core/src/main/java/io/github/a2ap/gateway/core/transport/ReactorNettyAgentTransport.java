@@ -21,6 +21,7 @@ import io.github.a2ap.gateway.api.model.OutboundCredentials;
 import io.github.a2ap.gateway.api.model.OutboundRequest;
 import io.github.a2ap.gateway.api.model.OutboundResponse;
 import io.github.a2ap.gateway.api.spi.AgentTransport;
+import io.github.a2ap.gateway.core.exception.AgentTransportException;
 import io.github.a2ap.gateway.core.discovery.AgentCardUrlPolicy;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;

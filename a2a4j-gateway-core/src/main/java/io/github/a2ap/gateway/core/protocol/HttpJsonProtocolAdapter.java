@@ -32,6 +32,7 @@ import io.github.a2ap.gateway.api.model.PrincipalContext;
 import io.github.a2ap.gateway.api.model.ProtocolDescriptor;
 import io.github.a2ap.gateway.api.model.TargetHint;
 import io.github.a2ap.gateway.api.spi.ProtocolAdapter;
+import io.github.a2ap.gateway.core.exception.VersionNotSupportedException;
 import java.lang.reflect.Array;
 import java.net.URI;
 import java.net.URLEncoder;

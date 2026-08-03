@@ -19,6 +19,7 @@ package io.github.a2ap.gateway.core.store;
 import io.github.a2ap.gateway.api.model.GatewayResult;
 import io.github.a2ap.gateway.api.model.IdempotencyRecord;
 import io.github.a2ap.gateway.api.spi.IdempotencyStore;
+import io.github.a2ap.gateway.core.exception.IdempotencyConflictException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;

@@ -9,6 +9,7 @@ package io.github.a2ap.gateway.spring;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.a2ap.gateway.api.model.GatewayMetricEvent;
+import io.github.a2ap.gateway.spring.metrics.MicrometerGatewayMetrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.util.Map;
 import org.junit.jupiter.api.Test;

@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.a2ap.gateway.core.store.InMemoryIdempotencyStore;
 import io.github.a2ap.gateway.core.store.InMemoryTaskRouteStore;
+import io.github.a2ap.gateway.spring.metrics.GatewayStoreMetrics;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 

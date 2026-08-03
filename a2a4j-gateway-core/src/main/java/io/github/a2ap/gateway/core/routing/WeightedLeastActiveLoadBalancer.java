@@ -21,6 +21,7 @@ import io.github.a2ap.gateway.api.model.AgentInstance;
 import io.github.a2ap.gateway.api.model.GatewayCommand;
 import io.github.a2ap.gateway.api.model.RoutingContext;
 import io.github.a2ap.gateway.api.spi.AgentLoadBalancer;
+import io.github.a2ap.gateway.core.exception.RouteResolutionException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;

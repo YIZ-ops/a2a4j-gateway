@@ -18,6 +18,7 @@ package io.github.a2ap.gateway.core.transport;
 
 import io.github.a2ap.gateway.api.model.OutboundResponse;
 import io.github.a2ap.gateway.api.model.ProtocolDescriptor;
+import io.github.a2ap.gateway.core.exception.AgentTransportException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;

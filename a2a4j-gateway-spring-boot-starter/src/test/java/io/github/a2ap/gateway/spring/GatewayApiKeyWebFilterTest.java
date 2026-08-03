@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import io.github.a2ap.gateway.api.model.PrincipalContext;
 import io.github.a2ap.gateway.core.security.ApiKeyAuthenticator;
 import io.github.a2ap.gateway.core.security.ApiKeyCredential;
+import io.github.a2ap.gateway.spring.security.GatewayApiKeyWebFilter;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;

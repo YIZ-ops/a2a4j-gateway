@@ -29,6 +29,7 @@ import io.github.a2ap.gateway.api.model.ProtocolDescriptor;
 import io.github.a2ap.gateway.api.model.ProtocolPolicy;
 import io.github.a2ap.gateway.api.model.RoutingContext;
 import io.github.a2ap.gateway.api.model.TargetHint;
+import io.github.a2ap.gateway.core.exception.RouteResolutionException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;

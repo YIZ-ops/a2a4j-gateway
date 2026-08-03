@@ -11,8 +11,6 @@
 - [外部 Agent 接入](./external-agent-integration.md)
 - [运行手册](./runbook.md)
 
-原独立验收审计和性能快照的必要内容已经并入本文，不再分别维护，避免阶段状态和测试数量相互漂移。
-
 ## 2. 当前结论
 
 代码基线：A2A4J `0.0.1`、Java 17 源码级别、Spring Boot 3.5.16、A2A `1.0`。

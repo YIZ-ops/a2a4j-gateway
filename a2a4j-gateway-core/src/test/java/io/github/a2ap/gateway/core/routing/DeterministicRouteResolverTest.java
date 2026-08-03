@@ -32,6 +32,7 @@ import io.github.a2ap.gateway.api.model.TargetHint;
 import io.github.a2ap.gateway.api.model.TaskRoute;
 import io.github.a2ap.gateway.api.spi.TaskRouteStore;
 import io.github.a2ap.gateway.core.discovery.InMemoryAgentRegistry;
+import io.github.a2ap.gateway.core.exception.RouteResolutionException;
 import io.github.a2ap.gateway.core.security.DefaultAuthorizationPolicy;
 import java.time.Instant;
 import java.util.List;

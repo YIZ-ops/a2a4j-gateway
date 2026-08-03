@@ -19,6 +19,7 @@ package io.github.a2ap.gateway.spring;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import io.github.a2ap.gateway.api.GatewayHeaders;
+import io.github.a2ap.gateway.spring.support.GatewayRequestIdResolver;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.http.server.reactive.MockServerHttpRequest;

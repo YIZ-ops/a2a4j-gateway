@@ -20,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.a2ap.gateway.core.security.GatewayPrincipalFactory;
+import io.github.a2ap.gateway.spring.autoconfigure.GatewaySecurityProperties;
+import io.github.a2ap.gateway.spring.security.GatewayAuthenticationToken;
+import io.github.a2ap.gateway.spring.security.GatewayJwtAuthenticationConverter;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;

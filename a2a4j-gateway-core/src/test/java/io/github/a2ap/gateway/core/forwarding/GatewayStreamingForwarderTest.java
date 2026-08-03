@@ -39,6 +39,8 @@ import io.github.a2ap.gateway.api.model.TaskRoute;
 import io.github.a2ap.gateway.api.spi.AgentTransport;
 import io.github.a2ap.gateway.api.spi.CredentialProvider;
 import io.github.a2ap.gateway.core.discovery.InMemoryAgentRegistry;
+import io.github.a2ap.gateway.core.exception.GatewayForwardingException;
+import io.github.a2ap.gateway.core.exception.GatewayUpstreamException;
 import io.github.a2ap.gateway.core.protocol.JsonRpcProtocolAdapter;
 import io.github.a2ap.gateway.core.routing.DeterministicRouteResolver;
 import io.github.a2ap.gateway.core.routing.WeightedLeastActiveLoadBalancer;

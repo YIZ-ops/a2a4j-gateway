@@ -155,8 +155,7 @@ forwarder.forward(command, routingContext(exchange))
 ```
 
 对于 `SendMessage`，最终进入 `execute(command, context)`。`configuration.returnImmediately` 不会改变
-Gateway 的入口类型，也不会把 `SendMessage` 转换成 SSE；该配置由 Adapter 原样编码给上游 Agent。上游快速返回
-活动任务后，客户端使用 Gateway Task ID 调用 `GetTask` 或 `SubscribeToTask`。
+Gateway 的入口类型，也不会把 `SendMessage` 转换成 SSE；该配置由 Adapter 原样编码给上游 Agent。上游快速返回活动任务后，客户端使用 Gateway Task ID 调用 `GetTask` 或 `SubscribeToTask`。
 
 `ListTasks` 是一个例外：它完成路由和 `task:read` 鉴权后，直接查询 Gateway 的 `TaskRouteStore` 并返回当前主体
 可见的任务快照，不会向外部 Agent 发送 `ListTasks` 请求。
@@ -199,8 +198,7 @@ routeResolver.resolve(command, context)
     -> upstreamContextId
 ```
 
-命中后请求固定到原 Agent 和实例，并在出站编码时把 Gateway Context ID 改写为上游 Context ID。未命中才按新任务
-规则选择 Agent。
+命中后请求固定到原 Agent 和实例，并在出站编码时把 Gateway Context ID 改写为上游 Context ID。未命中才按新任务规则选择 Agent。
 
 ### 6.3 新任务
 
@@ -356,9 +354,7 @@ Authorization: Bearer <token>
 transport.exchange(instance, outbound, credentials)
 ```
 
-实现位于 [`ReactorNettyAgentTransport`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/transport/ReactorNettyAgentTransport.java)。Transport 会校验 URL 和 DNS、检查 SSRF 策略、建立连接、设置超时，按照
-`OutboundRequest.httpMethod` 使用 POST、GET 或 DELETE 访问接口，检查状态码和响应大小，最后返回
-`OutboundResponse`。
+实现位于 [`ReactorNettyAgentTransport`](../../a2a4j-gateway-core/src/main/java/io/github/a2ap/gateway/core/transport/ReactorNettyAgentTransport.java)。Transport 会校验 URL 和 DNS、检查 SSRF 策略、建立连接、设置超时，按照`OutboundRequest.httpMethod` 使用 POST、GET 或 DELETE 访问接口，检查状态码和响应大小，最后返回`OutboundResponse`。
 
 ## 11. 解析上游响应
 
@@ -372,11 +368,7 @@ Adapter 会识别 HTTP 状态码、JSON-RPC error、HTTP+JSON 错误、Task ID�
 
 如果发现协议错误，Gateway 会返回上游协议错误，而不会把非法响应当作普通业务数据返回。
 
-同步响应和流式响应在此处有一个重要差异：同步路径可以先把错误归一化为 `GatewayResult`；流式路径必须在
-Adapter 解码或写出第一帧前检查上游 HTTP 状态码。上游 SSE 建连返回 4xx/5xx 时，Forwarder 会先从
-JSON-RPC code、ErrorInfo.reason/status 和 HTTP status 推导 canonical A2A error，再抛出绑定无关的错误，
-由入口的 HTTP 或 JSON-RPC Error Handler 返回普通错误响应。该场景不会产生 `200 text/event-stream`，也不会把
-`error` 放进只允许 `task`/`message`/`statusUpdate`/`artifactUpdate` 的 `StreamResponse` oneof。
+同步响应和流式响应在此处有一个重要差异：同步路径可以先把错误归一化为 `GatewayResult`；流式路径必须在 Adapter 解码或写出第一帧前检查上游 HTTP 状态码。上游 SSE 建连返回 4xx/5xx 时，Forwarder 会先从 JSON-RPC code、ErrorInfo.reason/status 和 HTTP status 推导 canonical A2A error，再抛出绑定无关的错误，由入口的 HTTP 或 JSON-RPC Error Handler 返回普通错误响应。该场景不会产生 `200 text/event-stream`，也不会把`error` 放进只允许 `task`/`message`/`statusUpdate`/`artifactUpdate` 的 `StreamResponse` oneof。
 
 ## 12. 改写 Task ID 和 Context ID
 
@@ -418,8 +410,7 @@ Gateway 会通过 `TaskRouteStore` 找到原 Agent、实例和上游 Task ID，�
 <status> application/a2a+json
 ```
 
-`Content-Type` 固定为 `application/a2a+json`。HTTP 状态码读取 `GatewayResult.metadata.statusCode`：成功响应通常为
-200，上游错误或 Gateway 规范化错误会使用相应的 4xx/5xx 状态码。
+`Content-Type` 固定为 `application/a2a+json`。HTTP 状态码读取 `GatewayResult.metadata.statusCode`：成功响应通常为 200，上游错误或 Gateway 规范化错误会使用相应的 4xx/5xx 状态码。
 
 如果出站协议是 JSON-RPC，`HttpJsonProtocolAdapter.toHttpJson` 会提取 JSON-RPC 的 `result`，转换成 HTTP+JSON 响应。
 

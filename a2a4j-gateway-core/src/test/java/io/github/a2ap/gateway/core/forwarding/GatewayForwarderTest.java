@@ -40,6 +40,7 @@ import io.github.a2ap.gateway.api.model.TargetHint;
 import io.github.a2ap.gateway.api.spi.CredentialProvider;
 import io.github.a2ap.gateway.api.spi.ProtocolAdapter;
 import io.github.a2ap.gateway.core.discovery.InMemoryAgentRegistry;
+import io.github.a2ap.gateway.core.exception.GatewayForwardingException;
 import io.github.a2ap.gateway.core.protocol.HttpJsonProtocolAdapter;
 import io.github.a2ap.gateway.core.protocol.JsonRpcProtocolAdapter;
 import io.github.a2ap.gateway.core.routing.DeterministicRouteResolver;

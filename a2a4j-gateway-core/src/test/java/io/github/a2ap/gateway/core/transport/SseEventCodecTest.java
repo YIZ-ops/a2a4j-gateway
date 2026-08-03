@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import io.github.a2ap.gateway.api.model.GatewayEvent;
+import io.github.a2ap.gateway.core.exception.AgentTransportException;
 import java.time.Instant;
 import java.util.Map;
 import java.util.List;

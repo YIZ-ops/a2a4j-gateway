@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import io.github.a2ap.gateway.spring.autoconfigure.GatewaySecurityProperties;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;

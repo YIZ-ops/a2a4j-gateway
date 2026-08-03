@@ -28,6 +28,7 @@ import io.github.a2ap.gateway.api.spi.AgentRegistry;
 import io.github.a2ap.gateway.api.spi.AuthorizationPolicy;
 import io.github.a2ap.gateway.api.spi.RouteResolver;
 import io.github.a2ap.gateway.api.spi.TaskRouteStore;
+import io.github.a2ap.gateway.core.exception.RouteResolutionException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
